@@ -1,4 +1,4 @@
-require "ssl_test"
+require "ssl-test"
 require "minitest/autorun"
 
 describe SSLTest do
