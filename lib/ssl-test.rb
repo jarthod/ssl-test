@@ -1,14 +1,16 @@
 require "net/https"
 
 module SSLTest
-  VERSION = "0.0.2"
+  VERSION = "1.0.0"
 
-  def self.test url
+  def self.test url, open_timeout: 5, read_timeout: 5
     uri = URI.parse(url)
     return if uri.scheme != 'https'
     cert = failed_cert_reason = nil
 
     http = Net::HTTP.new(uri.host, uri.port)
+    http.open_timeout = open_timeout
+    http.read_timeout = read_timeout
     http.use_ssl = true
     http.verify_mode = OpenSSL::SSL::VERIFY_PEER
     http.verify_callback = -> (verify_ok, store_context) {

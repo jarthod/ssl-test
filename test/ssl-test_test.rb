@@ -39,6 +39,13 @@ describe SSLTest do
       cert.must_be_nil
     end
 
+    it "stops on timeouts" do
+      valid, error, cert = SSLTest.test("https://approachio.com", open_timeout: 1)
+      valid.must_be_nil
+      error.must_equal "SSL certificate test failed: execution expired"
+      cert.must_be_nil
+    end
+
     # Not implemented yet
     # it "returns error on revoked cert" do
     #   valid, error, cert = SSLTest.test("https://revoked.grc.com")

@@ -38,6 +38,15 @@ error # => "SSL certificate test failed: getaddrinfo: Name or service not known"
 cert # => nil
 ```
 
+You can also pass custom timeout values:
+```ruby
+valid, error, cert = SSLTest.test "https://slowebsite.com", open_timeout: 2, read_timeout: 2
+valid # => nil
+error # => "SSL certificate test failed: execution expired"
+cert # => nil
+```
+Default timeout values are 5 seconds each (open and read)
+
 ## How it works
 
 SSLTester simply performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
