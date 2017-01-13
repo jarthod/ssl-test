@@ -1,7 +1,7 @@
 require "net/https"
 
 module SSLTest
-  VERSION = "1.0.0"
+  VERSION = "1.1.0"
 
   def self.test url, open_timeout: 5, read_timeout: 5
     uri = URI.parse(url)
@@ -19,9 +19,8 @@ module SSLTest
       verify_ok
     }
 
-    req = Net::HTTP::Head.new('/')
     begin
-      res = http.start { http.request(req) }
+      res = http.start { }
       return [true, nil, cert]
     rescue OpenSSL::SSL::SSLError => e
       error = e.message
