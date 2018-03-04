@@ -1,4 +1,4 @@
-# SSLTest
+# SSLTest [![Build Status](https://travis-ci.org/jarthod/ssl-test.svg?branch=master)](https://travis-ci.org/jarthod/ssl-test) [![Depfu](https://badges.depfu.com/badges/0d732c9cbec3fdaaac7c5ba5583269db/overview.svg)](https://depfu.com/github/jarthod/ssl-test)
 
 A small ruby gem to help you test a website's SSL certificate.
 
