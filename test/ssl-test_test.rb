@@ -39,6 +39,13 @@ describe SSLTest do
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
 
+    it "returns error on incomplete chain" do
+      valid, error, cert = SSLTest.test("https://incomplete-chain.badssl.com/")
+      error.must_equal "error code 20: unable to get local issuer certificate"
+      valid.must_equal false
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
     it "returns error on untrusted root" do
       valid, error, cert = SSLTest.test("https://untrusted-root.badssl.com/")
       error.must_equal "error code 20: unable to get local issuer certificate"
