@@ -19,21 +19,21 @@ describe SSLTest do
     end
 
     it "returns error on self signed certificate" do
-      valid, error, cert = SSLTest.test("https://kernelcoffee.org")
+      valid, error, cert = SSLTest.test("https://self-signed.badssl.com/")
       error.must_equal "error code 18: self signed certificate"
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
 
     it "returns error on invalid host" do
-      valid, error, cert = SSLTest.test("https://web1.updn.io")
-      error.must_equal 'hostname "web1.updn.io" does not match the server certificate'
+      valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
+      error.must_equal 'hostname "wrong.host.badssl.com" does not match the server certificate'
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
 
     it "returns error on expired cert" do
-      valid, error, cert = SSLTest.test("https://testssl-expire.disig.sk")
+      valid, error, cert = SSLTest.test("https://expired.badssl.com/")
       error.must_equal "error code 10: certificate has expired"
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
