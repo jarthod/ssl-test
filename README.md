@@ -59,15 +59,8 @@ Pretty much the same errors `curl` will:
 - Self signed certificates
 - Valid certs used with incorect hostname
 - Untrusted root (if your system is up-to-date)
+- Revoked certs
 - And more...
-
-### GOTCHA: errors SSLTest will NOT detect
-
-There is a spefic kind or error this code will **NOT** detect: *revoked certificates*. This is much more complex to handle because it needs an up to date database of revoked certs to check with. This is implemented in most modern browsers but the results vary greatly (chrome ignores this for example).
-
-Here is an example of website with a revoked certificate: https://revoked.badssl.com/
-
-Any contribution to add this feature is greatly appreciated :)
 
 ## Contributing
 
