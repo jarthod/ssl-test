@@ -5,7 +5,7 @@ require "uri"
 
 module SSLTest
   VERSION = "1.3.0".freeze
-  OCSP_FAIL_RETURN = [false, nil, nil].freeze
+  OCSP_SOFT_FAIL_RETURN = [false, false, nil, nil].freeze
 
   def self.test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     uri = URI.parse(url)
@@ -26,8 +26,9 @@ module SSLTest
 
     begin
       http.start { }
-      revoked, revocation_reason, revocation_date = test_ocsp_revocation(cert, chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
-      return [false, "SSL certificate revoked: #{revocation_reason} (revocation date: #{revocation_date})", cert] if revoked
+      failed, revoked, message, revocation_date = test_ocsp_revocation(cert, chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+      return [nil, "OCSP test failed: #{message}"] if failed
+      return [false, "SSL certificate revoked: #{message} (revocation date: #{revocation_date})", cert] if revoked
       return [true, nil, cert]
     rescue OpenSSL::SSL::SSLError => e
       error = e.message
@@ -87,7 +88,7 @@ module SSLTest
 
     ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
     http_response = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
-    return OCSP_FAIL_RETURN unless http_response
+    return OCSP_SOFT_FAIL_RETURN unless http_response
 
     response = OpenSSL::OCSP::Response.new http_response.body
     basic_response = response.basic
@@ -95,17 +96,19 @@ module SSLTest
     # Check the response signature
     store = OpenSSL::X509::Store.new
     store.set_default_paths
-    return OCSP_FAIL_RETURN unless basic_response.verify([], store)
+    return OCSP_SOFT_FAIL_RETURN unless basic_response.verify([], store)
 
     # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
-    return OCSP_FAIL_RETURN unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL && request.check_nonce(basic_response) != 0
+    return OCSP_SOFT_FAIL_RETURN unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL && request.check_nonce(basic_response) != 0
 
     # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-status
     response_certificate_id, status, reason, revocation_time, _this_update, _next_update, _extensions = basic_response.status.first
 
-    return OCSP_FAIL_RETURN unless response_certificate_id.serial == certificate_id.serial
-    return [true, revocation_reason_to_string(reason), revocation_time] if status == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
-    OCSP_FAIL_RETURN
+    return OCSP_SOFT_FAIL_RETURN unless response_certificate_id.serial == certificate_id.serial
+    return [false, true, revocation_reason_to_string(reason), revocation_time] if status == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
+    OCSP_SOFT_FAIL_RETURN
+  rescue Exception => e
+    return [true, nil, e.message, nil]
   end
 
   def self.follow_ocsp_redirects(uri, data, open_timeout: 5, read_timeout: 5, redirection_limit: 5)
