@@ -92,6 +92,11 @@ module SSLTest
     response = OpenSSL::OCSP::Response.new http_response.body
     basic_response = response.basic
 
+    # Check the response signature
+    store = OpenSSL::X509::Store.new
+    store.set_default_paths
+    return OCSP_FAIL_RETURN unless basic_response.verify([], store)
+
     # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
     return OCSP_FAIL_RETURN unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL && request.check_nonce(basic_response) != 0
 
