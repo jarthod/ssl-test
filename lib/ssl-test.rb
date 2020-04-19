@@ -110,7 +110,7 @@ module SSLTest
     return OCSP_SOFT_FAIL_RETURN unless response_certificate_id.serial == certificate_id.serial
     return [false, true, revocation_reason_to_string(reason), revocation_time] if status == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
     OCSP_SOFT_FAIL_RETURN
-  rescue Exception => e
+  rescue => e
     return [true, nil, e.message, nil]
   end
 
