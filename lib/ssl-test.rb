@@ -67,6 +67,7 @@ module SSLTest
 
   # https://docs.ruby-lang.org/en/2.2.0/OpenSSL/OCSP.html
   # https://stackoverflow.com/questions/16244084/how-to-programmatically-check-if-a-certificate-has-been-revoked#answer-16257470
+  # Returns an array with [ocsp_check_failed, certificate_revoked, error_reason, revocation_date]
   def self.test_ocsp_revocation cert, chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     issuer = chain.last
 
@@ -109,7 +110,7 @@ module SSLTest
 
     return OCSP_SOFT_FAIL_RETURN unless response_certificate_id.serial == certificate_id.serial
     return [false, true, revocation_reason_to_string(reason), revocation_time] if status == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
-    OCSP_SOFT_FAIL_RETURN
+    [false, false, nil, nil]
   rescue => e
     return [true, nil, e.message, nil]
   end
