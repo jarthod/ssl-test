@@ -91,15 +91,18 @@ module SSLTest
     return OCSP_SOFT_FAIL_RETURN unless http_response
 
     response = OpenSSL::OCSP::Response.new http_response.body
+    # https://ruby-doc.org/stdlib-2.6.3/libdoc/openssl/rdoc/OpenSSL/OCSP.html#constants-list
+    return OCSP_SOFT_FAIL_RETURN unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL
     basic_response = response.basic
 
     # Check the response signature
     store = OpenSSL::X509::Store.new
     store.set_default_paths
-    return OCSP_SOFT_FAIL_RETURN unless basic_response.verify([], store)
+    # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-verify
+    return OCSP_SOFT_FAIL_RETURN unless basic_response.verify(chain, store)
 
     # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
-    return OCSP_SOFT_FAIL_RETURN unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL && request.check_nonce(basic_response) != 0
+    return OCSP_SOFT_FAIL_RETURN unless request.check_nonce(basic_response) != 0
 
     # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-status
     response_certificate_id, status, reason, revocation_time, _this_update, _next_update, _extensions = basic_response.status.first
