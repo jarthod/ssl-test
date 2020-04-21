@@ -26,7 +26,7 @@ module SSLTest
     begin
       http.start { }
       failed, revoked, message, revocation_date = test_ocsp_revocation(cert, chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
-      return [nil, "OCSP test failed: #{message}"] if failed
+      return [nil, "OCSP test failed: #{message}", cert] if failed
       return [false, "SSL certificate revoked: #{message} (revocation date: #{revocation_date})", cert] if revoked
       return [true, "OCSP test couldn't be performed: #{message}", cert] if message
       return [true, nil, cert]
