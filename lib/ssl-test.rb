@@ -69,48 +69,60 @@ module SSLTest
   # https://stackoverflow.com/questions/16244084/how-to-programmatically-check-if-a-certificate-has-been-revoked#answer-16257470
   # Returns an array with [ocsp_check_failed, certificate_revoked, error_reason, revocation_date]
   def self.test_ocsp_revocation cert, chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
+    @ocsp_response_cache ||= {}
     chain[0..-2].each_with_index do |current_checked_cert, i|
+      # https://tools.ietf.org/html/rfc5280#section-4.1.2.2
+      # The serial number [...] MUST be unique for each certificate issued by a given CA (i.e., the issuer name and serial number identify a unique certificate)
+      unicity_key = [current_checked_cert.issuer.to_s, current_checked_cert.serial.to_s]
+
       issuer = chain[i + 1]
 
       digest = OpenSSL::Digest::SHA1.new
       certificate_id = OpenSSL::OCSP::CertificateId.new(current_checked_cert, issuer, digest)
 
-      request = OpenSSL::OCSP::Request.new
-      request.add_certid certificate_id
-      request.add_nonce
+      if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
+        request = OpenSSL::OCSP::Request.new
+        request.add_certid certificate_id
+        request.add_nonce
 
-      authority_info_access = current_checked_cert.extensions.find do |extension|
-        extension.oid == "authorityInfoAccess"
+        authority_info_access = current_checked_cert.extensions.find do |extension|
+          extension.oid == "authorityInfoAccess"
+        end
+
+        descriptions = authority_info_access.value.split("\n")
+        ocsp = descriptions.find do |description|
+          description.start_with?("OCSP")
+        end
+
+        ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
+        http_response = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+        return ocsp_soft_fail_return("OCSP response request failed") unless http_response
+
+        response = OpenSSL::OCSP::Response.new http_response.body
+        # https://ruby-doc.org/stdlib-2.6.3/libdoc/openssl/rdoc/OpenSSL/OCSP.html#constants-list
+        return ocsp_soft_fail_return("OCSP response failed: #{ocsp_response_status_to_string(response.status)}") unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL
+        basic_response = response.basic
+
+        # Check the response signature
+        store = OpenSSL::X509::Store.new
+        store.set_default_paths
+        # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-verify
+        return ocsp_soft_fail_return("OCSP response signature verification failed") unless basic_response.verify(chain, store)
+
+        # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
+        return ocsp_soft_fail_return("OCSP response nonce check failed") unless request.check_nonce(basic_response) != 0
+
+        # https://ruby-doc.org/stdlib-2.3.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-status
+        response_certificate_id, status, reason, revocation_time, this_update, next_update, _extensions = basic_response.status.first
+
+        return ocsp_soft_fail_return("OCSP response serial check failed") unless response_certificate_id.serial == certificate_id.serial
+
+        @ocsp_response_cache[unicity_key] = { status: status, reason: reason, revocation_time: revocation_time, next_update: next_update }
       end
 
-      descriptions = authority_info_access.value.split("\n")
-      ocsp = descriptions.find do |description|
-        description.start_with?("OCSP")
-      end
+      ocsp_response = @ocsp_response_cache[unicity_key]
 
-      ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
-      http_response = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
-      return ocsp_soft_fail_return("OCSP response request failed") unless http_response
-
-      response = OpenSSL::OCSP::Response.new http_response.body
-      # https://ruby-doc.org/stdlib-2.6.3/libdoc/openssl/rdoc/OpenSSL/OCSP.html#constants-list
-      return ocsp_soft_fail_return("OCSP response failed: #{ocsp_response_status_to_string(response.status)}") unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL
-      basic_response = response.basic
-
-      # Check the response signature
-      store = OpenSSL::X509::Store.new
-      store.set_default_paths
-      # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-verify
-      return ocsp_soft_fail_return("OCSP response signature verification failed") unless basic_response.verify(chain, store)
-
-      # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
-      return ocsp_soft_fail_return("OCSP response nonce check failed") unless request.check_nonce(basic_response) != 0
-
-      # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-status
-      response_certificate_id, status, reason, revocation_time, _this_update, _next_update, _extensions = basic_response.status.first
-
-      return ocsp_soft_fail_return("OCSP response serial check failed") unless response_certificate_id.serial == certificate_id.serial
-      return [false, true, revocation_reason_to_string(reason), revocation_time] if status == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
+      return [false, true, revocation_reason_to_string(ocsp_response[:reason]), ocsp_response[:revocation_time]] if ocsp_response[:status] == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
     end
     [false, false, nil, nil]
   rescue => e
