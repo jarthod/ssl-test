@@ -70,22 +70,22 @@ module SSLTest
   # Returns an array with [ocsp_check_failed, certificate_revoked, error_reason, revocation_date]
   def self.test_ocsp_revocation chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     @ocsp_response_cache ||= {}
-    chain[0..-2].each_with_index do |current_checked_cert, i|
+    chain[0..-2].each_with_index do |cert, i|
       # https://tools.ietf.org/html/rfc5280#section-4.1.2.2
       # The serial number [...] MUST be unique for each certificate issued by a given CA (i.e., the issuer name and serial number identify a unique certificate)
-      unicity_key = [current_checked_cert.issuer.to_s, current_checked_cert.serial.to_s]
+      unicity_key = [cert.issuer.to_s, cert.serial.to_s]
 
       if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
         issuer = chain[i + 1]
 
         digest = OpenSSL::Digest::SHA1.new
-        certificate_id = OpenSSL::OCSP::CertificateId.new(current_checked_cert, issuer, digest)
+        certificate_id = OpenSSL::OCSP::CertificateId.new(cert, issuer, digest)
 
         request = OpenSSL::OCSP::Request.new
         request.add_certid certificate_id
         request.add_nonce
 
-        authority_info_access = current_checked_cert.extensions.find do |extension|
+        authority_info_access = cert.extensions.find do |extension|
           extension.oid == "authorityInfoAccess"
         end
 
