@@ -25,7 +25,7 @@ module SSLTest
 
     begin
       http.start { }
-      failed, revoked, message, revocation_date = test_ocsp_revocation(cert, chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+      failed, revoked, message, revocation_date = test_ocsp_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
       return [nil, "OCSP test failed: #{message}", cert] if failed
       return [false, "SSL certificate revoked: #{message} (revocation date: #{revocation_date})", cert] if revoked
       return [true, "OCSP test couldn't be performed: #{message}", cert] if message
@@ -68,19 +68,19 @@ module SSLTest
   # https://docs.ruby-lang.org/en/2.2.0/OpenSSL/OCSP.html
   # https://stackoverflow.com/questions/16244084/how-to-programmatically-check-if-a-certificate-has-been-revoked#answer-16257470
   # Returns an array with [ocsp_check_failed, certificate_revoked, error_reason, revocation_date]
-  def self.test_ocsp_revocation cert, chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
+  def self.test_ocsp_revocation chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     @ocsp_response_cache ||= {}
     chain[0..-2].each_with_index do |current_checked_cert, i|
       # https://tools.ietf.org/html/rfc5280#section-4.1.2.2
       # The serial number [...] MUST be unique for each certificate issued by a given CA (i.e., the issuer name and serial number identify a unique certificate)
       unicity_key = [current_checked_cert.issuer.to_s, current_checked_cert.serial.to_s]
 
-      issuer = chain[i + 1]
-
-      digest = OpenSSL::Digest::SHA1.new
-      certificate_id = OpenSSL::OCSP::CertificateId.new(current_checked_cert, issuer, digest)
-
       if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
+        issuer = chain[i + 1]
+
+        digest = OpenSSL::Digest::SHA1.new
+        certificate_id = OpenSSL::OCSP::CertificateId.new(current_checked_cert, issuer, digest)
+
         request = OpenSSL::OCSP::Request.new
         request.add_certid certificate_id
         request.add_nonce
