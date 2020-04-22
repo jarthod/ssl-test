@@ -4,6 +4,13 @@ require "minitest/autorun"
 describe SSLTest do
 
   describe '.test' do
+    it "returns no error on valid SNI website" do
+      valid, error, cert = SSLTest.test("https://www.mycs.com")
+      error.must_be_nil
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
     it "returns no error on valid SAN" do
       valid, error, cert = SSLTest.test("https://1000-sans.badssl.com/")
       error.must_be_nil
@@ -85,13 +92,6 @@ describe SSLTest do
       valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
       error.must_equal "OCSP test couldn't be performed: OCSP response request failed"
       valid.must_equal true
-      cert.must_be_instance_of OpenSSL::X509::Certificate
-    end
-
-    it "returns a warning on OCSP error" do
-      valid, error, cert = SSLTest.test("https://www.mycs.com")
-      error.must_match /^OCSP test failed: /
-      valid.must_be_nil
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
   end
