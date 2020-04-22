@@ -73,7 +73,7 @@ module SSLTest
     chain[0..-2].each_with_index do |cert, i|
       # https://tools.ietf.org/html/rfc5280#section-4.1.2.2
       # The serial number [...] MUST be unique for each certificate issued by a given CA (i.e., the issuer name and serial number identify a unique certificate)
-      unicity_key = [cert.issuer.to_s, cert.serial.to_s]
+      unicity_key = "#{cert.issuer}/#{cert.serial}"
 
       if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
         issuer = chain[i + 1]
