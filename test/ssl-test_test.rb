@@ -89,8 +89,8 @@ describe SSLTest do
     end
 
     it "stops following redirection after the limit for the revoked certs check" do
-      valid, error, cert = SSLTest.test("https://revoked.badssl.com/", redirection_limit: 0)
-      error.must_be_nil
+      valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
+      error.must_equal "OCSP test couldn't be performed: OCSP response request failed"
       valid.must_equal true
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
