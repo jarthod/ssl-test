@@ -69,10 +69,18 @@ module SSLTest
           extension.oid == "authorityInfoAccess"
         end
 
+        # https://tools.ietf.org/html/rfc3280#section-4.2.2.1
+        # The authority information access extension [...] may be included in end entity or CA certificates, and it MUST be non-critical.
+        return ocsp_soft_fail_return("Missing authorityInfoAccess extension") unless authority_info_access
+
         descriptions = authority_info_access.value.split("\n")
         ocsp = descriptions.find do |description|
           description.start_with?("OCSP")
         end
+
+        # https://tools.ietf.org/html/rfc3280#section-4.2.2.1
+        # The id-ad-ocsp OID is used when revocation information for the certificate containing this extension is available using the Online Certificate Status Protocol (OCSP)
+        return ocsp_soft_fail_return("Missing OCSP URI in authorityInfoAccess extension") unless ocsp
 
         ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
         http_response = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
