@@ -4,13 +4,6 @@ require "minitest/autorun"
 describe SSLTest do
 
   describe '.test' do
-    it "returns no error on valid SNI website" do
-      valid, error, cert = SSLTest.test("https://www.mycs.com")
-      error.must_be_nil
-      valid.must_equal true
-      cert.must_be_instance_of OpenSSL::X509::Certificate
-    end
-
     it "returns no error on valid SAN" do
       valid, error, cert = SSLTest.test("https://1000-sans.badssl.com/")
       error.must_be_nil
@@ -55,7 +48,7 @@ describe SSLTest do
 
     it "returns error on invalid host" do
       valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
-      error.must_equal 'hostname "wrong.host.badssl.com" does not match the server certificate (*.badssl.com, badssl.com)'
+      error.must_equal 'hostname "wrong.host.badssl.com" does not match the server certificate'
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
@@ -83,7 +76,7 @@ describe SSLTest do
 
     it "returns error on revoked cert" do
       valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      error.must_equal "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2016-09-02 21:28:48 UTC)"
+      error.must_equal "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
@@ -92,6 +85,13 @@ describe SSLTest do
       valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
       error.must_equal "OCSP test couldn't be performed: OCSP response request failed"
       valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
+    it "returns a warning on OCSP error" do
+      valid, error, cert = SSLTest.test("https://www.mycs.com")
+      error.must_match /^OCSP test failed: /
+      valid.must_be_nil
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
   end
