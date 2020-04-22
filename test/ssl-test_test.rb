@@ -94,5 +94,19 @@ describe SSLTest do
       valid.must_equal true
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
+
+    it "warns when the OCSP URI is missing" do
+      valid, error, cert = SSLTest.test("https://www.demarches-simplifiees.fr")
+      error.must_equal "OCSP test couldn't be performed: Missing OCSP URI in authorityInfoAccess extension"
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
+    it "warns when the authorityInfoAccess extension is missing" do
+      valid, error, cert = SSLTest.test("https://www.anonymisation.gov.pf")
+      error.must_equal "OCSP test couldn't be performed: Missing authorityInfoAccess extension"
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
   end
 end
