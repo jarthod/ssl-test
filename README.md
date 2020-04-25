@@ -79,7 +79,7 @@ Pretty much the same errors `curl` will:
 - Untrusted root (if your system is up-to-date)
 - And more...
 
-But also *revoked certs* like most browsers (not handled by `curl`)
+But also **revoked certs** like most browsers (not handled by `curl`)
 
 ## Changelog
 
