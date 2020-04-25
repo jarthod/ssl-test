@@ -67,7 +67,7 @@ cert # => #<OpenSSL::X509::Certificate...>
 
 SSLTester performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
 
-After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked.
+After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked. OCSP responses are cached in memory so be careful if you try to validate millions of certificates.
 
 ### What kind of errors will SSLTest detect
 
@@ -79,11 +79,11 @@ Pretty much the same errors `curl` will:
 - Untrusted root (if your system is up-to-date)
 - And more...
 
-But also revoked certs like most browsers (not handled by `curl`)
+But also *revoked certs* like most browsers (not handled by `curl`)
 
 ## Changelog
 
-1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
+* 1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
 
 ## Contributing
 
