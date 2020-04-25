@@ -90,9 +90,9 @@ module SSLTest
         ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
         http_response, ocsp_request_error = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
         if http_response.nil?
-          ocsp_request_error_string = ocsp_soft_fail_return("OCSP response request failed (OCSP URI: #{ocsp_uri}, error: #{ocsp_request_error})")
-          @ocsp_request_error_cache[unicity_key] = { error: ocsp_request_error_string, cache_until: Time.now + OCSP_REQUEST_ERROR_CACHE_DURATION }
-          return ocsp_request_error_string
+          ocsp_request_error_return = ocsp_soft_fail_return("OCSP response request failed (OCSP URI: #{ocsp_uri}, error: #{ocsp_request_error})")
+          @ocsp_request_error_cache[unicity_key] = { error: ocsp_request_error_return, cache_until: Time.now + OCSP_REQUEST_ERROR_CACHE_DURATION }
+          return ocsp_request_error_return
         end
 
         response = OpenSSL::OCSP::Response.new http_response.body
