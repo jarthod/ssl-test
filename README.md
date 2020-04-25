@@ -47,9 +47,27 @@ cert # => nil
 ```
 Default timeout values are 5 seconds each (open and read)
 
+Revoked certificates are detected using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint:
+```ruby
+valid, error, cert = SSLTest.test "https://revoked.badssl.com"
+valid # => false
+error # => "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
+cert # => #<OpenSSL::X509::Certificate...>
+```
+
+If the OCSP endpoint is invalid or unreachable the certificate may still be considered valid but with an error message:
+```ruby
+valid, error, cert = SSLTest.test "https://sitewithnoOCSP.com"
+valid # => true
+error # => "OCSP test couldn't be performed: Missing OCSP URI in authorityInfoAccess extension"
+cert # => #<OpenSSL::X509::Certificate...>
+```
+
 ## How it works
 
-SSLTester simply performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
+SSLTester performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
+
+After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked.
 
 ### What kind of errors will SSLTest detect
 
@@ -59,8 +77,13 @@ Pretty much the same errors `curl` will:
 - Self signed certificates
 - Valid certs used with incorect hostname
 - Untrusted root (if your system is up-to-date)
-- Revoked certs
 - And more...
+
+But also revoked certs like most browsers (not handled by `curl`)
+
+## Changelog
+
+1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
 
 ## Contributing
 
