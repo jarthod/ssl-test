@@ -83,6 +83,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 ## Changelog
 
+* 1.3.1 - 2020-04-25: Improved caching of failed OCSP responses (#5)
 * 1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
 
 ## Contributing

@@ -4,7 +4,7 @@ require "openssl"
 require "uri"
 
 module SSLTest
-  VERSION = "1.3.0".freeze
+  VERSION = "1.3.1".freeze
   OCSP_REQUEST_ERROR_CACHE_DURATION = 5 * 60
 
   def self.test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
