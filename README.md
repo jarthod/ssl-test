@@ -47,9 +47,27 @@ cert # => nil
 ```
 Default timeout values are 5 seconds each (open and read)
 
+Revoked certificates are detected using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint:
+```ruby
+valid, error, cert = SSLTest.test "https://revoked.badssl.com"
+valid # => false
+error # => "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
+cert # => #<OpenSSL::X509::Certificate...>
+```
+
+If the OCSP endpoint is invalid or unreachable the certificate may still be considered valid but with an error message:
+```ruby
+valid, error, cert = SSLTest.test "https://sitewithnoOCSP.com"
+valid # => true
+error # => "OCSP test couldn't be performed: Missing OCSP URI in authorityInfoAccess extension"
+cert # => #<OpenSSL::X509::Certificate...>
+```
+
 ## How it works
 
-SSLTester simply performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
+SSLTester performs a HEAD request using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
+
+After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked. OCSP responses are cached in memory so be careful if you try to validate millions of certificates.
 
 ### What kind of errors will SSLTest detect
 
@@ -61,13 +79,11 @@ Pretty much the same errors `curl` will:
 - Untrusted root (if your system is up-to-date)
 - And more...
 
-### GOTCHA: errors SSLTest will NOT detect
+But also **revoked certs** like most browsers (not handled by `curl`)
 
-There is a spefic kind or error this code will **NOT** detect: *revoked certificates*. This is much more complex to handle because it needs an up to date database of revoked certs to check with. This is implemented in most modern browsers but the results vary greatly (chrome ignores this for example).
+## Changelog
 
-Here is an example of website with a revoked certificate: https://revoked.badssl.com/
-
-Any contribution to add this feature is greatly appreciated :)
+* 1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
 
 ## Contributing
 

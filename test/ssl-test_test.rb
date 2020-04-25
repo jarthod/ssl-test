@@ -55,7 +55,7 @@ describe SSLTest do
 
     it "returns error on invalid host" do
       valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
-      error.must_equal 'hostname "wrong.host.badssl.com" does not match the server certificate (*.badssl.com, badssl.com)'
+      error.must_equal 'hostname "wrong.host.badssl.com" does not match the server certificate'
       valid.must_equal false
       cert.must_be_instance_of OpenSSL::X509::Certificate
     end
@@ -81,12 +81,32 @@ describe SSLTest do
       cert.must_be_nil
     end
 
-    # Not implemented yet
-    # it "returns error on revoked cert" do
-    #   valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-    #   error.must_equal "error code XX: certificate has been revoked"
-    #   valid.must_equal false
-    #   cert.must_be_instance_of OpenSSL::X509::Certificate
-    # end
+    it "returns error on revoked cert" do
+      valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
+      error.must_equal "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
+      valid.must_equal false
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
+    it "stops following redirection after the limit for the revoked certs check" do
+      valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
+      error.must_equal "OCSP test couldn't be performed: OCSP response request failed"
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
+    it "warns when the OCSP URI is missing" do
+      valid, error, cert = SSLTest.test("https://www.demarches-simplifiees.fr")
+      error.must_equal "OCSP test couldn't be performed: Missing OCSP URI in authorityInfoAccess extension"
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
+
+    it "warns when the authorityInfoAccess extension is missing" do
+      valid, error, cert = SSLTest.test("https://www.anonymisation.gov.pf")
+      error.must_equal "OCSP test couldn't be performed: Missing authorityInfoAccess extension"
+      valid.must_equal true
+      cert.must_be_instance_of OpenSSL::X509::Certificate
+    end
   end
 end
