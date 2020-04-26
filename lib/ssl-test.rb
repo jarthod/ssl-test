@@ -4,7 +4,8 @@ require "openssl"
 require "uri"
 
 module SSLTest
-  VERSION = "1.3.0".freeze
+  VERSION = "1.3.1".freeze
+  OCSP_REQUEST_ERROR_CACHE_DURATION = 5 * 60
 
   def self.test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     uri = URI.parse(url)
@@ -50,10 +51,14 @@ module SSLTest
   # Returns an array with [ocsp_check_failed, certificate_revoked, error_reason, revocation_date]
   def self.test_ocsp_revocation chain, open_timeout: 5, read_timeout: 5, redirection_limit: 5
     @ocsp_response_cache ||= {}
+    @ocsp_request_error_cache ||= {}
     chain[0..-2].each_with_index do |cert, i|
       # https://tools.ietf.org/html/rfc5280#section-4.1.2.2
       # The serial number [...] MUST be unique for each certificate issued by a given CA (i.e., the issuer name and serial number identify a unique certificate)
       unicity_key = "#{cert.issuer}/#{cert.serial}"
+
+      current_request_error_cache = @ocsp_request_error_cache[unicity_key]
+      return current_request_error_cache[:error] if current_request_error_cache && Time.now <= current_request_error_cache[:cache_until]
 
       if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
         issuer = chain[i + 1]
@@ -83,27 +88,27 @@ module SSLTest
         return ocsp_soft_fail_return("Missing OCSP URI in authorityInfoAccess extension") unless ocsp
 
         ocsp_uri = URI(ocsp[/URI:(.*)/, 1])
-        http_response = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
-        return ocsp_soft_fail_return("OCSP response request failed") unless http_response
+        http_response, ocsp_request_error = follow_ocsp_redirects(ocsp_uri, request.to_der, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+        return ocsp_soft_fail_return("Request failed (URI: #{ocsp_uri}): #{ocsp_request_error}", unicity_key) unless http_response
 
         response = OpenSSL::OCSP::Response.new http_response.body
         # https://ruby-doc.org/stdlib-2.6.3/libdoc/openssl/rdoc/OpenSSL/OCSP.html#constants-list
-        return ocsp_soft_fail_return("OCSP response failed: #{ocsp_response_status_to_string(response.status)}") unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL
+        return ocsp_soft_fail_return("Unsuccessful response (URI: #{ocsp_uri}): #{ocsp_response_status_to_string(response.status)}", unicity_key) unless response.status == OpenSSL::OCSP::RESPONSE_STATUS_SUCCESSFUL
         basic_response = response.basic
 
         # Check the response signature
         store = OpenSSL::X509::Store.new
         store.set_default_paths
         # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-verify
-        return ocsp_soft_fail_return("OCSP response signature verification failed") unless basic_response.verify(chain, store)
+        return ocsp_soft_fail_return("Signature verification failed (URI: #{ocsp_uri})", unicity_key) unless basic_response.verify(chain, store)
 
         # https://ruby-doc.org/stdlib-2.4.0/libdoc/openssl/rdoc/OpenSSL/OCSP/Request.html#method-i-check_nonce
-        return ocsp_soft_fail_return("OCSP response nonce check failed") unless request.check_nonce(basic_response) != 0
+        return ocsp_soft_fail_return("Nonce check failed (URI: #{ocsp_uri})", unicity_key) unless request.check_nonce(basic_response) != 0
 
         # https://ruby-doc.org/stdlib-2.3.0/libdoc/openssl/rdoc/OpenSSL/OCSP/BasicResponse.html#method-i-status
-        response_certificate_id, status, reason, revocation_time, this_update, next_update, _extensions = basic_response.status.first
+        response_certificate_id, status, reason, revocation_time, _this_update, next_update, _extensions = basic_response.status.first
 
-        return ocsp_soft_fail_return("OCSP response serial check failed") unless response_certificate_id.serial == certificate_id.serial
+        return ocsp_soft_fail_return("Serial check failed (URI: #{ocsp_uri})", unicity_key) unless response_certificate_id.serial == certificate_id.serial
 
         @ocsp_response_cache[unicity_key] = { status: status, reason: reason, revocation_time: revocation_time, next_update: next_update }
       end
@@ -140,8 +145,9 @@ module SSLTest
         .select {|domain| domain.match?(hostname) }
     end
 
+    # Returns an array with [response, error_message]
     def follow_ocsp_redirects(uri, data, open_timeout: 5, read_timeout: 5, redirection_limit: 5)
-      return nil if redirection_limit == 0
+      return [nil, "Too many redirections (> #{redirection_limit})"] if redirection_limit == 0
 
       path = uri.path == "" ? "/" : uri.path
       http = Net::HTTP.new(uri.hostname, uri.port)
@@ -151,11 +157,11 @@ module SSLTest
       http_response = http.post(path, data, "content-type" => "application/ocsp-request")
       case http_response
       when Net::HTTPSuccess
-        http_response
+        [http_response, nil]
       when Net::HTTPRedirection
-        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit -1)
+        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit - 1)
       else
-        nil
+        [nil, "Wrong response type (#{http_response.class})"]
       end
     end
 
@@ -177,8 +183,10 @@ module SSLTest
       end
     end
 
-    def ocsp_soft_fail_return(reason)
-       [false, false, reason, nil].freeze
+    def ocsp_soft_fail_return(reason, unicity_key = nil)
+       error = [false, false, reason, nil]
+       @ocsp_request_error_cache[unicity_key] = { error: error, cache_until: Time.now + OCSP_REQUEST_ERROR_CACHE_DURATION } if unicity_key
+       error
     end
 
     def revocation_reason_to_string(revocation_reason)
