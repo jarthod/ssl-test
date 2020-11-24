@@ -18,12 +18,14 @@ describe SSLTest do
       _(cert).must_be_instance_of OpenSSL::X509::Certificate
     end
 
-    it "returns no error when no CN" do
-      valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
-      _(error).must_be_nil
-      _(valid).must_equal true
-      _(cert).must_be_instance_of OpenSSL::X509::Certificate
-    end
+    # Expired for the moment https://github.com/chromium/badssl.com/issues/447
+    #
+    # it "returns no error when no CN" do
+    #   valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
+    #   _(error).must_be_nil
+    #   _(valid).must_equal true
+    #   _(cert).must_be_instance_of OpenSSL::X509::Certificate
+    # end
 
     it "works with websites blocking http requests" do
       valid, error, cert = SSLTest.test("https://obyava.ua")
@@ -102,11 +104,13 @@ describe SSLTest do
       _(cert).must_be_instance_of OpenSSL::X509::Certificate
     end
 
-    it "warns when the authorityInfoAccess extension is missing" do
-      valid, error, cert = SSLTest.test("https://www.anonymisation.gov.pf")
-      _(error).must_equal "OCSP test couldn't be performed: Missing authorityInfoAccess extension"
-      _(valid).must_equal true
-      _(cert).must_be_instance_of OpenSSL::X509::Certificate
-    end
+    # Not the same error any more, I didn't find another certificate in this situation
+    #
+    # it "warns when the authorityInfoAccess extension is missing" do
+    #   valid, error, cert = SSLTest.test("https://www.anonymisation.gov.pf")
+    #   _(error).must_equal "OCSP test couldn't be performed: Missing authorityInfoAccess extension"
+    #   _(valid).must_equal true
+    #   _(cert).must_be_instance_of OpenSSL::X509::Certificate
+    # end
   end
 end
