@@ -1,5 +1,9 @@
 language: ruby
-
+# Ubuntu 18.04
+dist: bionic
+# https://docs.travis-ci.com/user/reference/bionic/#ruby-support
 rvm:
-  - 2.4.3
-  - 2.5.0
+  - 2.4.9
+  - 2.5.7
+  - 2.6.5
+  - 2.7.0
