@@ -138,9 +138,13 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 ## Changelog
 
+See also github releases: https://github.com/jarthod/ssl-test/releases
+
 * 1.4.0 - 2021-01-16: Implemented CRL as fallback to OCSP + expose cache metrics + add logger support
 * 1.3.1 - 2020-04-25: Improved caching of failed OCSP responses (#5)
 * 1.3.0 - 2020-04-25: Added revoked cert detection using OCSP (#3)
+* 1.2.0 - 2018-03-04: Better support for wrong hostname across ruby versions
+* 1.1.0 - 2017-01-13: Removed HTTP call, Net::HTTP#start is enough to open the connection and get cert details and validation
 
 ## Contributing
 
