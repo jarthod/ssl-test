@@ -1,4 +1,4 @@
-# SSLTest [![Build Status](https://travis-ci.com/jarthod/ssl-test.svg?branch=master)](https://travis-ci.com/jarthod/ssl-test)
+# SSLTest
 
 A small ruby gem (with no dependencies) to help you test a website's SSL certificate.
 

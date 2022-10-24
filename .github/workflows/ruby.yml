@@ -2,17 +2,15 @@ name: Specs
 on: [push]
 jobs:
   specs:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ruby-version: ['2.6', '2.7', '3.0', '3.1', 'jruby-head', 'truffleruby-head']
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v2
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: ${{ matrix.ruby-version }}
+        ruby-version: '3.1'
         bundler-cache: true # runs 'bundle install' and caches installed gems automatically
     - name: Run specs
       run: |
+        openssl version
         bundle exec rspec
