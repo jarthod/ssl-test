@@ -15,6 +15,7 @@ describe SSLTest do
     end
 
     it "returns no error on valid SAN" do
+      pending "Expired for the moment"
       valid, error, cert = SSLTest.test("https://1000-sans.badssl.com/")
       expect(error).to be_nil
       expect(valid).to eq(true)
@@ -22,7 +23,7 @@ describe SSLTest do
     end
 
     it "returns no error when no CN" do
-      skip "Expired for the moment https://github.com/chromium/badssl.com/issues/447"
+      pending "Expired for the moment https://github.com/chromium/badssl.com/issues/447"
       valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
       expect(error).to be_nil
       expect(valid).to eq(true)
@@ -38,7 +39,7 @@ describe SSLTest do
 
     it "returns error on self signed certificate" do
       valid, error, cert = SSLTest.test("https://self-signed.badssl.com/")
-      expect(error).to eq ("error code 18: self signed certificate")
+      expect(error).to eq ("error code 18: self-signed certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -52,14 +53,14 @@ describe SSLTest do
 
     it "returns error on untrusted root" do
       valid, error, cert = SSLTest.test("https://untrusted-root.badssl.com/")
-      expect(error).to eq ("error code 19: self signed certificate in certificate chain")
+      expect(error).to eq ("error code 19: self-signed certificate in certificate chain")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
     it "returns error on invalid host" do
       valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
-      expect(error).to include('hostname "wrong.host.badssl.com" does not match the server certificate')
+      expect(error).to include('error code 62: hostname mismatch')
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -80,7 +81,7 @@ describe SSLTest do
 
     it "stops on timeouts" do
       valid, error, cert = SSLTest.test("https://updown.io", open_timeout: 0)
-      expect(error).to eq ("SSL certificate test failed: Net::OpenTimeout")
+      expect(error).to eq ("SSL certificate test failed: Failed to open TCP connection to updown.io:443 (Connection timed out - user specified timeout)")
       expect(valid).to be_nil
       expect(cert).to be_nil
     end
@@ -97,7 +98,7 @@ describe SSLTest do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       expect(SSLTest).not_to receive(:follow_crl_redirects)
       valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)")
+      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2021-10-27 21:38:48 UTC)")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -106,14 +107,14 @@ describe SSLTest do
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
       valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      expect(error).to eq ("SSL certificate revoked: Unknown reason (revocation date: 2019-10-07 20:30:39 UTC)")
+      expect(error).to eq ("SSL certificate revoked: Unknown reason (revocation date: 2021-10-27 21:38:48 UTC)")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
     it "stops following redirection after the limit for the revoked certs check" do
       valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
-      expect(error).to eq ("Revocation test couldn't be performed: OCSP: Request failed (URI: http://ocsp.digicert.com): Too many redirections (> 0), CRL: Request failed (URI: http://crl3.digicert.com/sha2-ha-server-g6.crl): Too many redirections (> 0)")
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: Request failed (URI: http://ocsp.digicert.com): Too many redirections (> 0), CRL: Request failed (URI: http://crl3.digicert.com/DigiCertTLSHybridECCSHA3842020CA1-1.crl): Too many redirections (> 0)")
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -166,6 +167,13 @@ describe SSLTest do
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
+
+    it "accepts tcps scheme" do
+      valid, error, cert = SSLTest.test("tcps://updown.io:443")
+      expect(error).to be_nil
+      expect(valid).to eq(true)
+      expect(cert).to be_a OpenSSL::X509::Certificate
+    end
   end
 
   describe '.cache_size' do
@@ -179,17 +187,19 @@ describe SSLTest do
     end
 
     it "returns CRL cache size properly" do
-      SSLTest.send(:follow_crl_redirects, URI("http://crl.certigna.fr/certigna.crl")) # 1.3k
-      SSLTest.send(:follow_crl_redirects, URI("http://crl3.digicert.com/ssca-sha2-g6.crl")) # 19M
+      SSLTest.send(:follow_crl_redirects, URI("http://crl.certigna.fr/certigna.crl")) # 1.1k
+      SSLTest.send(:follow_crl_redirects, URI("http://crl3.digicert.com/DigiCertTLSHybridECCSHA3842020CA1-1.crl")) # 26k
       expect(SSLTest.cache_size[:crl][:lists]).to eq(2)
-      expect(SSLTest.cache_size[:crl][:bytes]).to be > 19_000_000
+      expect(SSLTest.cache_size[:crl][:bytes]).to be > 27_000
     end
 
     it "returns OCSP cache size properly" do
       SSLTest.test("https://updown.io")
-      expect(SSLTest.cache_size[:ocsp][:responses]).to eq(2)
+      expect(SSLTest.cache_size[:ocsp][:responses]).to eq(1)
       expect(SSLTest.cache_size[:ocsp][:errors]).to eq(0)
-      expect(SSLTest.cache_size[:ocsp][:bytes]).to be > 200
+      expect(SSLTest.cache_size[:ocsp][:bytes]).to be > 150
+      expect(SSLTest.cache_size[:crl][:lists]).to eq(1)
+      expect(SSLTest.cache_size[:crl][:bytes]).to be > 500
     end
   end
 

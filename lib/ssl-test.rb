@@ -10,12 +10,12 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"1.4.0"
+  VERSION = -"1.4.1"
 
   class << self
     def test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
       uri = URI.parse(url)
-      return if uri.scheme != 'https'
+      return if uri.scheme != 'https' and uri.scheme != 'tcps'
       cert = failed_cert_reason = chain = nil
 
       @logger&.info { "SSLTest #{url} started" }
