@@ -67,12 +67,12 @@ module SSLTest
     end
 
     # Returns an array with [response, error_message]
-    def follow_ocsp_redirects(uri, data, open_timeout: 5, read_timeout: 5, redirection_limit: 5)
+    def follow_ocsp_redirects(uri, data, open_timeout: 5, read_timeout: 5, redirection_limit: 5, proxy_host: nil, proxy_port: nil)
       return [nil, "Too many redirections (> #{redirection_limit})"] if redirection_limit == 0
 
       @logger&.debug { "SSLTest   + OCSP: fetch URI #{uri}" }
       path = uri.path == "" ? "/" : uri.path
-      http = Net::HTTP.new(uri.hostname, uri.port)
+      http = Net::HTTP.new(uri.hostname, uri.port, proxy_host, proxy_port)
       http.open_timeout = open_timeout
       http.read_timeout = read_timeout
 
@@ -82,7 +82,7 @@ module SSLTest
         @logger&.debug { "SSLTest   + OCSP: 200 OK (#{http_response.body.bytesize} bytes)" }
         [http_response.body, nil]
       when Net::HTTPRedirection
-        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit - 1)
+        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, rproxy_host: proxy_host, proxy_port: proxy_port, edirection_limit: redirection_limit - 1)
       else
         @logger&.debug { "SSLTest   + OCSP: Error: #{http_response.class}" }
         [nil, "Wrong response type (#{http_response.class})"]

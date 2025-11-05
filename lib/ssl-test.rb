@@ -13,27 +13,45 @@ module SSLTest
   VERSION = -"1.4.1"
 
   class << self
-    def test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
-      uri = URI.parse(url)
-      return if uri.scheme != 'https' and uri.scheme != 'tcps'
-      cert = failed_cert_reason = chain = nil
+    def test url, open_timeout: 5, read_timeout: 5, proxy_host:nil, proxy_port: nil, redirection_limit: 5, client_cert: nil, ca_certs: []
+      cert = failed_cert_reason = chain = store = nil
 
-      @logger&.info { "SSLTest #{url} started" }
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.open_timeout = open_timeout
-      http.read_timeout = read_timeout
-      http.use_ssl = true
-      http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-      http.verify_callback = -> (verify_ok, store_context) {
+      if url.nil? && (client_cert.nil? || ca_certs.empty?)
+        raise ArgumentError, "A url must be provided as the first argument, OR ... client_cert: AND ca_certs: must both be specified"
+      end
+
+      certificate_verify_callback = -> (verify_ok, store_context) {
         cert = store_context.current_cert
         chain = store_context.chain
         failed_cert_reason = [store_context.error, store_context.error_string] if store_context.error != 0
         verify_ok
       }
 
+      if !client_cert.nil? && !ca_certs.empty?
+        store = OpenSSL::X509::Store.new
+        ca_certs.each { store.add_cert(_1) }
+        store.verify_callback = certificate_verify_callback
+      else
+        uri = URI.parse(url)
+        return if uri.scheme != 'https' and uri.scheme != 'tcps'
+
+        @logger&.info { "SSLTest #{url} started" }
+        http = Net::HTTP.new(uri.host, uri.port, proxy_host, proxy_port)
+        http.open_timeout = open_timeout
+        http.read_timeout = read_timeout
+        http.use_ssl = true
+        http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+        http.verify_callback = certificate_verify_callback
+      end
+
       begin
-        http.start { }
-        revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+        if store.nil?
+          http.start { }
+        else
+          store.verify(client_cert)
+        end
+
+        revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
         @logger&.info { "SSLTest #{url} finished: revoked=#{revoked} #{message}" }
         return [false, "SSL certificate revoked: #{message} (revocation date: #{revocation_date})", cert] if revoked
         return [true, "Revocation test couldn't be performed: #{message}", cert] if message
