@@ -6,6 +6,8 @@ require "benchmark"
 # SSLTest.logger = Logger.new(STDOUT)
 
 describe SSLTest do
+  before { SSLTest.flush_cache }
+
   describe '.test' do
     it "returns no error on valid SNI website" do
       valid, error, cert = SSLTest.test("https://www.mycs.com")
@@ -15,20 +17,22 @@ describe SSLTest do
     end
 
     it "returns no error on valid SAN" do
-      pending "Expired for the moment"
-      valid, error, cert = SSLTest.test("https://1000-sans.badssl.com/")
+      # CN is updown.io, www.updown.io is an Alternative Name
+      valid, error, cert = SSLTest.test("https://www.updown.io/")
       expect(error).to be_nil
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns no error when no CN" do
-      pending "Expired for the moment https://github.com/chromium/badssl.com/issues/447"
-      valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
-      expect(error).to be_nil
-      expect(valid).to eq(true)
-      expect(cert).to be_a OpenSSL::X509::Certificate
-    end
+    # Disabled: unlikely to be repaired anytime soon: https://github.com/chromium/badssl.com/issues/447
+    # Couldn't find a good alternative
+    # it "returns no error when no CN" do
+    #   pending "Expired for the moment https://github.com/chromium/badssl.com/issues/447"
+    #   valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
+    #   expect(error).to be_nil
+    #   expect(valid).to eq(true)
+    #   expect(cert).to be_a OpenSSL::X509::Certificate
+    # end
 
     it "works with websites blocking http requests" do
       valid, error, cert = SSLTest.test("https://obyava.ua")
@@ -99,8 +103,8 @@ describe SSLTest do
     it "returns error on revoked cert (OCSP)" do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       expect(SSLTest).not_to receive(:follow_crl_redirects)
-      valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2025-11-04 21:01:29 UTC)")
+      valid, error, cert = SSLTest.test("https://revoked-rsa-dv.ssl.com/")
+      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2025-06-09 15:07:39 UTC)")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -159,6 +163,11 @@ describe SSLTest do
       expect(error).to be_nil
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
+      # make sure both were used
+      expect(SSLTest.cache_size).to match({
+        crl:  hash_including(lists: 1),
+        ocsp: hash_including(responses: 1, errors: 0)
+      })
     end
 
     it "accepts tcps scheme" do
