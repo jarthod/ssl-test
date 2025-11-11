@@ -8,7 +8,7 @@ require "benchmark"
 describe SSLTest do
   before { SSLTest.flush_cache }
 
-  describe '.test' do
+  describe '.test_url' do
     it "returns no error on valid SNI website" do
       valid, error, cert = SSLTest.test("https://www.mycs.com")
       expect(error).to be_nil
@@ -233,6 +233,18 @@ describe SSLTest do
       time = Benchmark.realtime { body2, error2 = SSLTest.send(:follow_crl_redirects, uri) }
       expect(time).to be > 0.001 # a request is made
       expect(body2).to be(body) # but we're still using cache because it's a 304
+    end
+  end
+
+  describe '.test_cert' do
+    it "returns no error on valid SNI website" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_mycs_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_mycs_com_ca_bundle.pem')))
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to be_nil
+      expect(valid).to eq(true)
+      expect(cert).to eq(cert)
     end
   end
 end
