@@ -246,5 +246,55 @@ describe SSLTest do
       expect(valid).to eq(true)
       expect(cert).to eq(cert)
     end
+
+    it "returns no error on self signed certificates" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/self_signed_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/self_signed_ca_bundle.pem')))
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to be_nil
+      expect(valid).to eq(true)
+      expect(cert).to eq(cert)
+    end
+
+    it "returns error on expired cert" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/expired_cert_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/expired_cert_ca_bundle.pem')))
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("error code 10: certificate has expired")
+      expect(valid).to eq(false)
+      expect(cert).to be_a OpenSSL::X509::Certificate
+    end
+
+    it "stops following redirection after the limit for the revoked certs check" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_github_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_github_com_ca_bundle.pem')))
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle, redirection_limit: 0)
+      expect(error).to include("Revocation test couldn't be performed: OCSP: Request failed")
+      expect(error).to include("Too many redirections (> 0)")
+      expect(valid).to eq(true)
+      expect(cert).to be_a OpenSSL::X509::Certificate
+    end
+
+
+    it "works with OCSP for first cert and CRL for intermediate (Google)" do
+      expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
+      expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
+
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to be_nil
+      expect(valid).to eq(true)
+      expect(cert).to be_a OpenSSL::X509::Certificate
+      # make sure both were used
+      expect(SSLTest.cache_size).to match({
+        crl:  hash_including(lists: 1),
+        ocsp: hash_including(responses: 1, errors: 0)
+      })
+    end
   end
 end

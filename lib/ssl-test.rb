@@ -65,8 +65,14 @@ module SSLTest
       begin
         store.verify(client_cert)
 
-        revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
-        return [!revoked, parsed_message(revoked, revocation_date, message), cert]
+        if failed_cert_reason
+          error_message = "error code #{failed_cert_reason[0]}: #{failed_cert_reason[1]}"
+          @logger&.info { "SSLTest #{cert.subject.to_s} finished: #{error_message}" }
+            return [false, error_message, cert]
+        else
+          revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
+          return [!revoked, parsed_message(revoked, revocation_date, message), cert]
+        end
       rescue OpenSSL::SSL::SSLError => error
         error_message = parse_ssl_error(error, cert, failed_cert_reason)
         @logger&.info { "SSLTest #{cert.subject.to_s} finished: #{error_message}" }

@@ -82,7 +82,7 @@ module SSLTest
         @logger&.debug { "SSLTest   + OCSP: 200 OK (#{http_response.body.bytesize} bytes)" }
         [http_response.body, nil]
       when Net::HTTPRedirection
-        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, rproxy_host: proxy_host, proxy_port: proxy_port, edirection_limit: redirection_limit - 1)
+        follow_ocsp_redirects(URI(http_response["location"]), data, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit - 1)
       else
         @logger&.debug { "SSLTest   + OCSP: Error: #{http_response.class}" }
         [nil, "Wrong response type (#{http_response.class})"]
