@@ -1,5 +1,7 @@
 require "ssl-test"
 require "benchmark"
+require 'webrick'
+require 'webrick/httpproxy'
 
 # Uncomment for debug logging:
 # require "logger"
@@ -7,6 +9,15 @@ require "benchmark"
 
 describe SSLTest do
   before { SSLTest.flush_cache }
+
+  let(:proxy_thread) { nil }
+
+
+  after(:each) do
+    if proxy_thread
+      proxy_thread.kill
+    end
+  end
 
   describe '.test_url' do
     it "returns no error on valid SNI website" do
@@ -176,6 +187,37 @@ describe SSLTest do
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
+
+    context 'when specifying a proxy' do
+      let(:proxy_thread) do
+        Thread.new do
+          dev_null = WEBrick::Log::new("/dev/null", 7)
+          proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
+          proxy.start
+        end
+      end
+
+      context 'when the proxy is active' do
+        it 'uses the provided http proxy' do
+          proxy_thread
+          sleep 0.1 # wait for the proxy to start!
+
+          valid, error, cert = SSLTest.test("https://updown.io", proxy_host: '127.0.0.1', proxy_port: 8080)
+          expect(error).to be_nil
+          expect(valid).to eq(true)
+          expect(cert).to be_a OpenSSL::X509::Certificate
+        end
+      end
+
+      context 'when the proxy is not reachable' do
+        it 'returns a http error' do
+          valid, error, cert = SSLTest.test("https://updown.io", proxy_host: '127.0.0.1', proxy_port: 55000)
+          expect(error).to include('(Connection refused - connect(2) for "127.0.0.1" port 55000)')
+          expect(valid).to be_nil
+          expect(cert).to be_nil
+        end
+      end
+    end
   end
 
   describe '.cache_size' do
@@ -296,5 +338,43 @@ describe SSLTest do
         ocsp: hash_including(responses: 1, errors: 0)
       })
     end
-  end
+
+    context 'when specifying a proxy' do
+      let(:proxy_thread) do
+        Thread.new do
+          dev_null = WEBrick::Log::new("/dev/null", 7)
+          proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
+          proxy.start
+        end
+      end
+
+      context 'when the proxy is active' do
+        it 'uses the provided http proxy' do
+          proxy_thread
+          sleep 0.1 # wait for the proxy to start!
+
+          cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
+          ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
+
+          valid, error, cert = SSLTest.test_cert(cert, ca_bundle, proxy_host: '127.0.0.1', proxy_port: 8080)
+          expect(error).to be_nil
+          expect(valid).to eq(true)
+          expect(cert).to eq(cert)
+        end
+      end
+
+      context 'when the proxy is not reachable' do
+        it 'returns a http error' do
+          cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
+          ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
+
+          valid, error, cert = SSLTest.test_cert(cert, ca_bundle, proxy_host: '127.0.0.1', proxy_port: 55000)
+          expect(error).to include('(Connection refused - connect(2) for "127.0.0.1" port 55000)')
+          expect(valid).to be_nil
+          expect(cert).to eq(cert)
+        end
+      end
+      end
+
+    end
 end

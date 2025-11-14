@@ -13,7 +13,7 @@ module SSLTest
   VERSION = -"1.4.1"
 
   class << self
-    def test_url url, open_timeout: 5, read_timeout: 5, proxy_host:nil, proxy_port: nil, redirection_limit: 5, ca_certs: []
+    def test_url url, open_timeout: 5, read_timeout: 5, proxy_host: nil, proxy_port: nil, redirection_limit: 5, ca_certs: []
       cert = failed_cert_reason = chain = nil
 
       uri = URI.parse(url)
