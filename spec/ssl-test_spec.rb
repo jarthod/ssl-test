@@ -306,7 +306,51 @@ describe SSLTest do
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to eq ("error code 10: certificate has expired")
       expect(valid).to eq(false)
-      expect(cert).to be_a OpenSSL::X509::Certificate
+      expect(cert).to eq(cert)
+    end
+
+    it "returns error on incomplete chain" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/incomplete_chain_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/incomplete_chain_ca_bundle.pem')))
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("error code 20: unable to get local issuer certificate")
+      expect(valid).to eq(false)
+      expect(cert).to eq(cert)
+    end
+
+    it "reports revocation exceptions" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/digicert_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/digicert_com_ca_bundle.pem')))
+      expect(SSLTest).to receive(:follow_ocsp_redirects).and_raise(ArgumentError.new("test"))
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq("SSL certificate test failed: test")
+      expect(valid).to be_nil
+      expect(cert).to eq(cert)
+    end
+
+    it "returns error on revoked cert (OCSP)" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/revoked_rsa_dv_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/revoked_rsa_dv_ca_bundle.pem')))
+
+      expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
+      expect(SSLTest).not_to receive(:follow_crl_redirects)
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2025-06-09 15:07:39 UTC)")
+      expect(valid).to eq(false)
+      expect(cert).to eq(cert)
+    end
+
+    it "returns error on revoked cert (CRL)" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/revoked_badssl_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/revoked_badssl_ca_bundle.pem')))
+
+      expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
+      expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2025-11-04 21:01:29 UTC)")
+      expect(valid).to eq(false)
+      expect(cert).to eq(cert)
     end
 
     it "stops following redirection after the limit for the revoked certs check" do
@@ -317,9 +361,51 @@ describe SSLTest do
       expect(error).to include("Revocation test couldn't be performed: OCSP: Request failed")
       expect(error).to include("Too many redirections (> 0)")
       expect(valid).to eq(true)
-      expect(cert).to be_a OpenSSL::X509::Certificate
+      expect(cert).to eq(cert)
     end
 
+    it "warns when the OCSP URI is missing" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
+
+      # Disable CRL fallback to see error message
+      expect(SSLTest).to receive(:test_crl_revocation).once.and_return([false, "skip CRL", nil])
+      expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: Missing OCSP URI in authorityInfoAccess extension, CRL: skip CRL")
+      expect(valid).to eq(true)
+      expect(cert).to eq(cert)
+    end
+
+    it "works with CRL only" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_demarches-simplifiees_fr_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_demarches-simplifiees_fr_ca_bundle.pem')))
+
+      # Disable OCSP
+      expect(SSLTest).to receive(:test_ocsp_revocation).twice.and_return([false, "skip OCSP", nil])
+      expect(SSLTest).to receive(:follow_crl_redirects).twice.and_call_original
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to be_nil
+      expect(valid).to eq(true)
+      expect(cert).to eq(cert)
+    end
+
+    it "warns when the CRL URI is missing" do
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_github_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_github_com_ca_bundle.pem')))
+
+      # Disable OCSP to see error message
+      expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
+      expect(SSLTest).not_to receive(:follow_crl_redirects)
+
+      valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: skip OCSP, CRL: Missing crlDistributionPoints extension")
+      expect(valid).to eq(true)
+      expect(cert).to eq(cert)
+
+    end
 
     it "works with OCSP for first cert and CRL for intermediate (Google)" do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
@@ -331,7 +417,7 @@ describe SSLTest do
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to be_nil
       expect(valid).to eq(true)
-      expect(cert).to be_a OpenSSL::X509::Certificate
+      expect(cert).to eq(cert)
       # make sure both were used
       expect(SSLTest.cache_size).to match({
         crl:  hash_including(lists: 1),
@@ -374,7 +460,6 @@ describe SSLTest do
           expect(cert).to eq(cert)
         end
       end
-      end
-
     end
+  end
 end
