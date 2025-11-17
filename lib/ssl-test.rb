@@ -37,7 +37,7 @@ module SSLTest
 
         revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
         @logger&.info { "SSLTest #{url} finished: revoked=#{revoked} #{message}" }
-        return [!revoked, parsed_message(revoked, revocation_date, message), cert]
+        return [!revoked, revocation_message(revoked, revocation_date, message), cert]
       rescue OpenSSL::SSL::SSLError => error
         error_message = parse_ssl_error(error, cert, failed_cert_reason, uri:)
         @logger&.info { "SSLTest #{url} finished: #{error_message}" }
@@ -71,7 +71,7 @@ module SSLTest
           return [false, error_message, cert]
         else
           revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
-          return [!revoked, parsed_message(revoked, revocation_date, message), cert]
+          return [!revoked, revocation_message(revoked, revocation_date, message), cert]
         end
       rescue => error
         @logger&.error { "SSLTest #{cert.subject.to_s} failed: #{error.message}" }
@@ -105,7 +105,7 @@ module SSLTest
 
     private
 
-    def parsed_message(revoked, revocation_date, message)
+    def revocation_message(revoked, revocation_date, message)
       if revoked
         "SSL certificate revoked: #{message} (revocation date: #{revocation_date})"
       elsif message
