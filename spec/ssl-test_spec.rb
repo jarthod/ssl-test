@@ -13,11 +13,7 @@ describe SSLTest do
   let(:proxy_thread) { nil }
 
 
-  after(:each) do
-    if proxy_thread
-      proxy_thread.kill
-    end
-  end
+  after(:each) { proxy_thread&.kill }
 
   describe '.test_url' do
     it "returns no error on valid SNI website" do
