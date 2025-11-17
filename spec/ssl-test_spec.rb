@@ -188,8 +188,8 @@ describe SSLTest do
       let(:proxy_thread) do
         Thread.new do
           dev_null = WEBrick::Log::new("/dev/null", 7)
-          proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
-          proxy.start
+          $proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
+          $proxy.start
         end
       end
 
@@ -198,10 +198,14 @@ describe SSLTest do
           proxy_thread
           sleep 0.1 # wait for the proxy to start!
 
+          allow($proxy).to receive(:do_GET).and_call_original
+
           valid, error, cert = SSLTest.test("https://updown.io", proxy_host: '127.0.0.1', proxy_port: 8080)
           expect(error).to be_nil
           expect(valid).to eq(true)
           expect(cert).to be_a OpenSSL::X509::Certificate
+
+          expect($proxy).to have_received(:do_GET).twice
         end
       end
 
@@ -425,8 +429,8 @@ describe SSLTest do
       let(:proxy_thread) do
         Thread.new do
           dev_null = WEBrick::Log::new("/dev/null", 7)
-          proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
-          proxy.start
+          $proxy = WEBrick::HTTPProxyServer.new Port: 8080,  :Logger => dev_null, :AccessLog => []
+          $proxy.start
         end
       end
 
@@ -434,6 +438,7 @@ describe SSLTest do
         it 'uses the provided http proxy' do
           proxy_thread
           sleep 0.1 # wait for the proxy to start!
+          allow($proxy).to receive(:do_GET).and_call_original
 
           cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
           ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
@@ -442,6 +447,8 @@ describe SSLTest do
           expect(error).to be_nil
           expect(valid).to eq(true)
           expect(cert).to eq(cert)
+
+          expect($proxy).to have_received(:do_GET).once
         end
       end
 
