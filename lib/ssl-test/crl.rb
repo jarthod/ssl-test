@@ -51,7 +51,7 @@ module SSLTest
     end
 
     # Returns an array with [response, error_message]
-    def follow_crl_redirects(uri, open_timeout: 5, read_timeout: 5, redirection_limit: 5)
+    def follow_crl_redirects(uri, open_timeout: 5, read_timeout: 5, redirection_limit: 5, proxy_host: nil, proxy_port: nil)
       return [nil, "Too many redirections (> #{redirection_limit})"] if redirection_limit == 0
 
       # Return file from cache if not expired
@@ -61,7 +61,7 @@ module SSLTest
 
       @logger&.debug { "SSLTest   + CRL: fetch URI #{uri}" }
       path = uri.path == "" ? "/" : uri.path
-      http = Net::HTTP.new(uri.hostname, uri.port)
+      http = Net::HTTP.new(uri.hostname, uri.port, proxy_host, proxy_port)
       http.open_timeout = open_timeout
       http.read_timeout = read_timeout
 
@@ -92,7 +92,7 @@ module SSLTest
         }
         [http_response.body, nil]
       when Net::HTTPRedirection
-        follow_crl_redirects(URI(http_response["location"]), open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit - 1)
+        follow_crl_redirects(URI(http_response["location"]), open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit - 1)
       else
         @logger&.debug { "SSLTest   + CRL: Error: #{http_response.class}" }
         [nil, "Wrong response type (#{http_response.class})"]
