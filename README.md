@@ -167,6 +167,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 See also github releases: https://github.com/jarthod/ssl-test/releases
 
+* 1.5.0 - 2025-11-28: Add support for local certificates testing and HTTP proxies (#8), changed `#test` method into `#test_url` and `#test_cert` (`#test` remains as an alias for `#test_url` for backward-compatibility)
 * 1.4.1 - 2022-10-24: Add support for "tcps://" scheme
 * 1.4.0 - 2021-01-16: Implemented CRL as fallback to OCSP + expose cache metrics + add logger support
 * 1.3.1 - 2020-04-25: Improved caching of failed OCSP responses (#5)

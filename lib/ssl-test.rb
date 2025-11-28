@@ -10,7 +10,7 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"1.4.1"
+  VERSION = -"1.5.0"
 
   class << self
     def test_url url, open_timeout: 5, read_timeout: 5, proxy_host: nil, proxy_port: nil, redirection_limit: 5
