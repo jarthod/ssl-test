@@ -8,48 +8,61 @@ gem 'ssl-test'
 
 ## Usage
 
-Simply call the `SSLTest.test` method and it'll return 3 values:
+Simply call the `SSLTest.test_url` method and it'll return 3 values:
 
 1. the validity of the certificate
 2. the error message (if any)
 3. the certificate itself
 
 Example with good cert:
+
 ```ruby
-valid, error, cert = SSLTest.test "https://google.com"
+valid, error, cert = SSLTest.test_url "https://google.com"
 valid # => true
 error # => nil
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
 Example with bad certificate:
+
 ```ruby
-valid, error, cert = SSLTest.test "https://testssl-expire.disig.sk"
+valid, error, cert = SSLTest.test_url "https://testssl-expire.disig.sk"
 valid # => false
 error # => "error code 10: certificate has expired"
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
 If the request fails and we're unable to detemine the validity, here are the returned values:
+
 ```ruby
-valid, error, cert = SSLTest.test "https://thisisdefinitelynotawebsite.com"
+valid, error, cert = SSLTest.test_url "https://thisisdefinitelynotawebsite.com"
 valid # => nil
 error # => "SSL certificate test failed: getaddrinfo: Name or service not known"
 cert # => nil
 ```
 
-You can also pass custom timeout values:
+You can also pass custom timeout values (defaults to 5 seconds for open and read):
+
 ```ruby
-valid, error, cert = SSLTest.test "https://slowebsite.com", open_timeout: 2, read_timeout: 2
+valid, error, cert = SSLTest.test_url "https://slowebsite.com", open_timeout: 2, read_timeout: 2
 valid # => nil
 error # => "SSL certificate test failed: execution expired"
 cert # => nil
 ```
-Default timeout values are 5 seconds each (open and read)
+
+Or a proxy host and port to use for the http requests:
+
+```ruby
+valid, error, cert = SSLTest.test_url "https://slowebsite.com", proxy_host: 'localhost', proxy_port: 8080
+valid # => true
+error # => nil
+cert # => #<OpenSSL::X509::Certificate...>
+```
 
 Revoked certificates are detected using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint by default:
+
 ```ruby
-valid, error, cert = SSLTest.test "https://revoked.badssl.com"
+valid, error, cert = SSLTest.test_url "https://revoked.badssl.com"
 valid # => false
 error # => "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
 cert # => #<OpenSSL::X509::Certificate...>
@@ -58,12 +71,26 @@ cert # => #<OpenSSL::X509::Certificate...>
 If the OCSP endpoint is missing, invalid or unreachable the certificate revocation will be tested using [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list).
 
 If both OCSP and CRL tests are impossible, the certificate will still be considered valid but with an error message:
+
 ```ruby
-valid, error, cert = SSLTest.test "https://sitewithnoOCSPorCRL.com"
+valid, error, cert = SSLTest.test_url "https://sitewithnoOCSPorCRL.com"
 valid # => true
 error # => "Revocation test couldn't be performed: OCSP: Missing OCSP URI in authorityInfoAccess extension, CRL: Missing crlDistributionPoints extension"
 cert # => #<OpenSSL::X509::Certificate...>
 ```
+
+### Testing when you have the client certificate and Certificate Authority Bundle
+
+If you already have access to the client certificate and the CA certificate bundle to check against, you can call `test_cert` which takes a certificate and ca bundle certificate instead of a URL. it has all the same options as `test_url`
+
+```ruby
+cert = OpenSSL::X509::Certificate.new(File.read('path/to/certificate')))
+ca_bundle = OpenSSL::X509::Certificate.load(File.read('path/to/ca-bundle-certificate'))
+
+valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
+```
+
+This check will pass for self-signed certificates if the certificate is signed by the ca certificate provided.
 
 ## How it works
 

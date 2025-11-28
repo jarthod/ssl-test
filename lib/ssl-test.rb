@@ -13,13 +13,14 @@ module SSLTest
   VERSION = -"1.4.1"
 
   class << self
-    def test url, open_timeout: 5, read_timeout: 5, redirection_limit: 5
-      uri = URI.parse(url)
-      return if uri.scheme != 'https' and uri.scheme != 'tcps'
+    def test_url url, open_timeout: 5, read_timeout: 5, proxy_host: nil, proxy_port: nil, redirection_limit: 5
       cert = failed_cert_reason = chain = nil
 
+      uri = URI.parse(url)
+      return if uri.scheme != 'https' and uri.scheme != 'tcps'
+
       @logger&.info { "SSLTest #{url} started" }
-      http = Net::HTTP.new(uri.host, uri.port)
+      http = Net::HTTP.new(uri.host, uri.port, proxy_host, proxy_port)
       http.open_timeout = open_timeout
       http.read_timeout = read_timeout
       http.use_ssl = true
@@ -33,25 +34,48 @@ module SSLTest
 
       begin
         http.start { }
-        revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, redirection_limit: redirection_limit)
+
+        revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
         @logger&.info { "SSLTest #{url} finished: revoked=#{revoked} #{message}" }
-        return [false, "SSL certificate revoked: #{message} (revocation date: #{revocation_date})", cert] if revoked
-        return [true, "Revocation test couldn't be performed: #{message}", cert] if message
-        return [true, nil, cert]
-      rescue OpenSSL::SSL::SSLError => e
-        error = e.message
-        error = "error code %d: %s" % failed_cert_reason if failed_cert_reason
-        if error =~ /certificate verify failed/
-          domains = cert_domains(cert)
-          if matching_domains(domains, uri.host).none?
-            error = "hostname \"#{uri.host}\" does not match the server certificate (#{domains.join(', ')})"
-          end
+        return [!revoked, revocation_message(revoked, revocation_date, message), cert]
+      rescue OpenSSL::SSL::SSLError => error
+        error_message = parse_ssl_error(error, cert, failed_cert_reason, uri:)
+        @logger&.info { "SSLTest #{url} finished: #{error_message}" }
+        return [false, error_message, cert]
+      rescue => error
+        @logger&.error { "SSLTest #{url} failed: #{error.message}" }
+        return [nil, "SSL certificate test failed: #{error.message}", cert]
+      end
+    end
+    alias :test :test_url
+
+
+    def test_cert client_cert, ca_certs, open_timeout: 5, read_timeout: 5, proxy_host:nil, proxy_port: nil, redirection_limit: 5
+      cert = failed_cert_reason = chain = store = nil
+
+      store = OpenSSL::X509::Store.new
+      ca_certs.each { store.add_cert(_1) }
+      store.verify_callback = -> (verify_ok, store_context) {
+        cert = store_context.current_cert
+        chain = store_context.chain
+        failed_cert_reason = [store_context.error, store_context.error_string] if store_context.error != 0
+        verify_ok
+      }
+
+      begin
+        store.verify(client_cert)
+
+        if failed_cert_reason
+          error_message = "error code #{failed_cert_reason[0]}: #{failed_cert_reason[1]}"
+          @logger&.info { "SSLTest #{cert.subject.to_s} finished: #{error_message}" }
+          return [false, error_message, cert]
+        else
+          revoked, message, revocation_date = test_chain_revocation(chain, open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit)
+          return [!revoked, revocation_message(revoked, revocation_date, message), cert]
         end
-        @logger&.info { "SSLTest #{url} finished: #{error}" }
-        return [false, error, cert]
-      rescue => e
-        @logger&.error { "SSLTest #{url} failed: #{e.message}" }
-        return [nil, "SSL certificate test failed: #{e.message}", cert]
+      rescue => error
+        @logger&.error { "SSLTest #{cert.subject.to_s} failed: #{error.message}" }
+        return [nil, "SSL certificate test failed: #{error.message}", cert]
       end
     end
 
@@ -80,6 +104,28 @@ module SSLTest
     end
 
     private
+
+    def revocation_message(revoked, revocation_date, message)
+      if revoked
+        "SSL certificate revoked: #{message} (revocation date: #{revocation_date})"
+      elsif message
+        "Revocation test couldn't be performed: #{message}"
+      end
+    end
+
+    def parse_ssl_error(error, cert, failed_cert_reason, uri:)
+      message = error.message
+      message = "error code %d: %s" % failed_cert_reason if failed_cert_reason
+      if message =~ /certificate verify failed/
+        domains = cert_domains(cert)
+        if !uri.nil? && matching_domains(domains, uri.host).none?
+          message = "hostname \"#{uri.host}\" does not match the server certificate (#{domains.join(', ')})"
+        end
+      end
+
+      message
+    end
+
 
     # https://docs.ruby-lang.org/en/2.2.0/OpenSSL/OCSP.html
     # https://stackoverflow.com/questions/16244084/how-to-programmatically-check-if-a-certificate-has-been-revoked#answer-16257470
