@@ -13,9 +13,9 @@ module SSLTest
     # and building a hash with serial, time and reason takes even more.
     # So doing this would be MUCH faster in terms of CPU for subsequent tests on the same CRL
     # but would take a LOT of memory.
-    # Also I expect most providers to support OCSP for first level cert (a lot of revokation),
-    # which means we should have to use CRL mostly for intermediaries with much smaller CRL.
-    # That's what Let's Encrypt is doing with their R3 intermediate for example.
+    # Note: we now check CRL first for every cert in the chain (leaf included), so leaf
+    # CRLs are fetched and cached too. These can be large for busy CAs, which makes the
+    # memory tradeoff above (caching the raw body rather than the parsed list) even more relevant.
 
     private
 

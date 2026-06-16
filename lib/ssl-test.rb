@@ -10,7 +10,7 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"1.5.0"
+  VERSION = -"1.6.0"
 
   class << self
     def test_url url, open_timeout: 5, read_timeout: 5, proxy_host: nil, proxy_port: nil, redirection_limit: 5
@@ -136,20 +136,20 @@ module SSLTest
       chain[0..-2].each_with_index do |cert, i|
         @logger&.debug { "SSLTest + test_chain_revocation: #{cert_field_to_hash(cert.subject)['CN']}" }
 
-        # Try with OCSP first
-        ocsp_result = test_ocsp_revocation(cert, issuer: chain[i + 1], chain: chain, **options)
-        @logger&.debug { "SSLTest   + OCSP: #{ocsp_result}" }
-        next if ocsp_result == :ocsp_ok # passed, go to next cert
-        return ocsp_result if ocsp_result[0] == true # revoked
-
-        # Otherwise it means there was an error so let's try with CRL instead
+        # Try with CRL first
         crl_result = test_crl_revocation(cert, issuer: chain[i + 1], chain: chain, **options)
         @logger&.debug { "SSLTest   + CRL: #{crl_result}" }
         next if crl_result == :crl_ok # passed, go to next cert
         return crl_result if crl_result[0] == true # revoked
 
+        # Otherwise it means there was an error so let's try with OCSP instead
+        ocsp_result = test_ocsp_revocation(cert, issuer: chain[i + 1], chain: chain, **options)
+        @logger&.debug { "SSLTest   + OCSP: #{ocsp_result}" }
+        next if ocsp_result == :ocsp_ok # passed, go to next cert
+        return ocsp_result if ocsp_result[0] == true # revoked
+
         # If both method failed, return a soft fail with a combination of both error messages
-        return [false, "OCSP: #{ocsp_result[1]}, CRL: #{crl_result[1]}", nil]
+        return [false, "CRL: #{crl_result[1]}, OCSP: #{ocsp_result[1]}", nil]
       end
 
       # If all test passed, the certificate is not revoked

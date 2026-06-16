@@ -59,23 +59,23 @@ error # => nil
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
-Revoked certificates are detected using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint by default:
+Revoked certificates are detected using [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) by default:
 
 ```ruby
 valid, error, cert = SSLTest.test_url "https://revoked.badssl.com"
 valid # => false
-error # => "SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2019-10-07 20:30:39 UTC)"
+error # => "SSL certificate revoked: Key Compromise (revocation date: 2019-10-07 20:30:39 UTC)"
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
-If the OCSP endpoint is missing, invalid or unreachable the certificate revocation will be tested using [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list).
+If the CRL is missing, invalid or unreachable the certificate revocation will be tested using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol).
 
-If both OCSP and CRL tests are impossible, the certificate will still be considered valid but with an error message:
+If both CRL and OCSP tests are impossible, the certificate will still be considered valid but with an error message:
 
 ```ruby
 valid, error, cert = SSLTest.test_url "https://sitewithnoOCSPorCRL.com"
 valid # => true
-error # => "Revocation test couldn't be performed: OCSP: Missing OCSP URI in authorityInfoAccess extension, CRL: Missing crlDistributionPoints extension"
+error # => "Revocation test couldn't be performed: CRL: Missing crlDistributionPoints extension, OCSP: Missing OCSP URI in authorityInfoAccess extension"
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
@@ -96,7 +96,7 @@ This check will pass for self-signed certificates if the certificate is signed b
 
 SSLTester connects as an HTTPS client (without issuing any requests) and then closes the connection. It does so using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
 
-After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked. If OCSP is not available it'll fetch the [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) instead. It does this for every certificates in the chain (except the root which is trusted by your Operating System). It is possible the first one will be validated with OCSP and the intermediate with CRL depending on what they offer.
+After that it fetches the [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) to verify if the certificate has been revoked. If the CRL is not available it'll query the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint instead. It does this for every certificates in the chain (except the root which is trusted by your Operating System). It is possible the first one will be validated with CRL and the intermediate with OCSP depending on what they offer.
 
 ### Caching
 
@@ -140,11 +140,11 @@ SSLTest will log various messages depending on the log level you specify, exampl
 ```
  INFO -- : SSLTest https://www.anonymisation.gov.pf started
 DEBUG -- : SSLTest + test_chain_revocation: www.anonymisation.gov.pf
+DEBUG -- : SSLTest   + CRL: [false, "Missing crlDistributionPoints extension", nil]
 DEBUG -- : SSLTest   + OCSP: fetch URI http://servicesca.ocsp.certigna.fr
 DEBUG -- : SSLTest   + OCSP: 200 OK (4661 bytes)
 DEBUG -- : SSLTest   + OCSP: ocsp_ok
 DEBUG -- : SSLTest + test_chain_revocation: Certigna Services CA
-DEBUG -- : SSLTest   + OCSP: [false, "Missing OCSP URI in authorityInfoAccess extension", nil]
 DEBUG -- : SSLTest   + CRL: fetch URI http://crl.certigna.fr/certigna.crl
 DEBUG -- : SSLTest   + CRL: 200 OK (1152 bytes)
 DEBUG -- : SSLTest   + CRL: crl_ok
@@ -167,6 +167,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 See also github releases: https://github.com/jarthod/ssl-test/releases
 
+* 1.6.0 - 2026-06-16: Check revocation with CRL first and fall back to OCSP (was OCSP first) to reduce revocation detection delay
 * 1.5.0 - 2025-11-28: Add support for local certificates testing and HTTP proxies (#8), changed `#test` method into `#test_url` and `#test_cert` (`#test` remains as an alias for `#test_url` for backward-compatibility)
 * 1.4.1 - 2022-10-24: Add support for "tcps://" scheme
 * 1.4.0 - 2021-01-16: Implemented CRL as fallback to OCSP + expose cache metrics + add logger support
