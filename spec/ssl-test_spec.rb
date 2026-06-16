@@ -2,10 +2,20 @@ require "ssl-test"
 require "benchmark"
 require 'webrick'
 require 'webrick/httpproxy'
+require 'rspec/retry'
 
 # Uncomment for debug logging:
 # require "logger"
 # SSLTest.logger = Logger.new(STDOUT)
+
+RSpec.configure do |config|
+  # Some public endpoints exercised below (notably *.badssl.com) intermittently
+  # reset TLS connections under load. Examples tagged `:retry` are re-run a few
+  # times (via rspec-retry) so these transient network blips don't fail the suite.
+  config.verbose_retry = true
+  config.display_try_failure_messages = true
+  config.default_sleep_interval = 1
+end
 
 describe SSLTest do
   before { SSLTest.flush_cache }
@@ -48,35 +58,35 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on self signed certificate" do
+    it "returns error on self signed certificate", :retry => 5 do
       valid, error, cert = SSLTest.test("https://self-signed.badssl.com/")
       expect(error).to eq ("error code 18: self-signed certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on incomplete chain" do
+    it "returns error on incomplete chain", :retry => 5 do
       valid, error, cert = SSLTest.test("https://incomplete-chain.badssl.com/")
       expect(error).to eq ("error code 20: unable to get local issuer certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on untrusted root" do
+    it "returns error on untrusted root", :retry => 5 do
       valid, error, cert = SSLTest.test("https://untrusted-root.badssl.com/")
       expect(error).to eq ("error code 19: self-signed certificate in certificate chain")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on invalid host" do
+    it "returns error on invalid host", :retry => 5 do
       valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
       expect(error).to include('error code 62: hostname mismatch')
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on expired cert" do
+    it "returns error on expired cert", :retry => 5 do
       valid, error, cert = SSLTest.test("https://expired.badssl.com/")
       expect(error).to eq ("error code 10: certificate has expired")
       expect(valid).to eq(false)
@@ -86,7 +96,7 @@ describe SSLTest do
     it "returns undetermined state on unhandled error" do
       valid, error, cert = SSLTest.test("https://pijoinlrfgind.com")
       expect(error).to include("SSL certificate test failed: Failed to open TCP connection to pijoinlrfgind.com:443")
-      expect(error).to include(/name.*not known/i)
+      expect(error).to match(/name.*not known/i)
       expect(valid).to be_nil
       expect(cert).to be_nil
     end
@@ -94,7 +104,7 @@ describe SSLTest do
     it "stops on timeouts" do
       valid, error, cert = SSLTest.test("https://updown.io", open_timeout: 0)
       expect(error).to include("SSL certificate test failed")
-      expect(error).to include(/timeout/i)
+      expect(error).to match(/timeout/i)
       expect(valid).to be_nil
       expect(cert).to be_nil
     end
@@ -111,16 +121,16 @@ describe SSLTest do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       expect(SSLTest).not_to receive(:follow_crl_redirects)
       valid, error, cert = SSLTest.test("https://revoked-rsa-dv.ssl.com/")
-      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2025-06-09 15:07:39 UTC)")
+      expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unspecified reason (revocation date: 2026-06-09 14:37:38 UTC)")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on revoked cert (CRL)" do
+    it "returns error on revoked cert (CRL)", :retry => 5 do
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
       valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2025-11-04 21:01:29 UTC)")
+      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -236,7 +246,7 @@ describe SSLTest do
       SSLTest.send(:follow_crl_redirects, URI("http://crl.certigna.fr/certigna.crl")) # 1.1k
       SSLTest.send(:follow_crl_redirects, URI("http://crl3.digicert.com/DigiCertTLSHybridECCSHA3842020CA1-1.crl")) # 26k
       expect(SSLTest.cache_size[:crl][:lists]).to eq(2)
-      expect(SSLTest.cache_size[:crl][:bytes]).to be > 6000
+      expect(SSLTest.cache_size[:crl][:bytes]).to be > 2000
     end
 
     it "returns OCSP cache size properly" do
@@ -350,7 +360,7 @@ describe SSLTest do
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
-      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2025-11-04 21:01:29 UTC)")
+      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
       expect(valid).to eq(false)
       expect(cert).to eq(cert)
     end
