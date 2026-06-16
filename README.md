@@ -100,16 +100,39 @@ After that it fetches the [CRL](https://en.wikipedia.org/wiki/Certificate_revoca
 
 ### Caching
 
-OCSP and CRL responses are cached in memory, which makes subsequent testing faster and more robust (avoids network error and throttling) but be careful about memory usage if you try to validate millions of certificates in a row.
+OCSP and CRL responses are cached, which makes subsequent testing faster and more robust (avoids network error and throttling).
 
 About the caching duration:
 - OCSP responses are cached until their "next_update" indicated inside the repsonse
 - OCSP errors are cached for 5 minutes
 - CRL responses are cached for 1 hour
 
-CRL responses can be big so when they expires they are re-validated with the server using HTTP caching headers when available (`Etag` & `Last-Modified`) to avoid downloading the list again if it didn't change.
+CRL responses can be big so when they expires they are re-validated with the server using HTTP caching headers when available (`Etag` & `Last-Modified`) to avoid downloading the list again if it didn't change. The cached body is therefore kept in the backend for a longer retention period (~4 days, refreshed on each use) so it's still around to revalidate against; unused lists are dropped after that.
 
-You can check the size of the cache with `SSLTest.cache_size`, which returns:
+#### Cache backend
+
+The cache backend is configurable. By default SSLTest uses `Rails.cache` when running inside Rails (so you get a shared, compressed cache for free, e.g. memcache via Dalli), and falls back to a simple in-process store (`SSLTest::MemoryStore`) otherwise.
+
+You can assign any object implementing the `Rails.cache`-style API (`read`, `write(key, value, expires_in:)`, `delete`):
+
+```ruby
+SSLTest.cache = Rails.cache          # explicit (this is the default under Rails)
+SSLTest.cache = SSLTest::MemoryStore.new  # force the in-process store
+SSLTest.cache = MyCustomStore.new    # anything responding to read/write/delete
+```
+
+The default in-process store is per-process and unbounded, so be careful about memory usage if you try to validate millions of certificates in a row (the OCSP cache is keyed by certificate serial). Using a shared store like `Rails.cache` with memcache avoids this and shares the cache across processes.
+
+If you want a bounded/compressed in-process cache without pulling in `Rails.cache`, the API is intentionally compatible with `ActiveSupport::Cache::MemoryStore`, which you can drop in directly:
+
+```ruby
+require "active_support/cache"
+SSLTest.cache = ActiveSupport::Cache::MemoryStore.new(size: 64.megabytes, compress: true)
+```
+
+(It auto-prunes when it exceeds `size`, unlike the built-in store. Note the introspection helpers below are specific to `SSLTest::MemoryStore`.)
+
+You can check the size of the **built-in** store with `SSLTest.cache.size`, which returns:
 
 ```ruby
 {
@@ -125,7 +148,9 @@ You can check the size of the cache with `SSLTest.cache_size`, which returns:
 }
 ```
 
-You can also flush the cache using `SSLTest.flush_cache` if you want (not recommended)
+You can also flush it using `SSLTest.cache.clear` if you want (not recommended).
+
+`size` is specific to the built-in `MemoryStore`; other backends won't respond to it. (The module-level `SSLTest.cache_size` and `SSLTest.flush_cache` from previous versions were **removed in 2.0** — use `SSLTest.cache.size` / `SSLTest.cache.clear` instead.)
 
 ### Logging
 
@@ -167,6 +192,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 See also github releases: https://github.com/jarthod/ssl-test/releases
 
+* 2.0.0 - 2026-06-16: Make the cache backend configurable (defaults to `Rails.cache` when available, else an in-process `SSLTest::MemoryStore`) so responses can be shared across processes and compressed (e.g. memcache via Dalli). Assign your own store with `SSLTest.cache = ...` (any object responding to `read`/`write`/`delete`). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
 * 1.6.0 - 2026-06-16: Check revocation with CRL first and fall back to OCSP (was OCSP first) to reduce revocation detection delay
 * 1.5.0 - 2025-11-28: Add support for local certificates testing and HTTP proxies (#8), changed `#test` method into `#test_url` and `#test_cert` (`#test` remains as an alias for `#test_url` for backward-compatibility)
 * 1.4.1 - 2022-10-24: Add support for "tcps://" scheme

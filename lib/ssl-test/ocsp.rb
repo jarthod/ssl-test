@@ -5,15 +5,18 @@ module SSLTest
     private
 
     def test_ocsp_revocation cert, issuer:, chain:, **options
-      @ocsp_response_cache ||= {}
-      @ocsp_request_error_cache ||= {}
-
       unicity_key = "#{cert.issuer}/#{cert.serial}"
+      error_cache_key = "#{CACHE_NAMESPACE}/ocsp-error/#{unicity_key}"
+      response_cache_key = "#{CACHE_NAMESPACE}/ocsp/#{unicity_key}"
 
-      current_request_error_cache = @ocsp_request_error_cache[unicity_key]
-      return current_request_error_cache[:error] if current_request_error_cache && Time.now <= current_request_error_cache[:expires]
+      # Expiry is handled by the cache backend (expires_in), so a cached value is
+      # always still valid: a present error means we recently failed, a present
+      # response means it hasn't reached its next_update yet.
+      cached_error = cache.read(error_cache_key)
+      return cached_error if cached_error
 
-      if @ocsp_response_cache[unicity_key].nil? || @ocsp_response_cache[unicity_key][:next_update] <= Time.now
+      ocsp_response = cache.read(response_cache_key)
+      if ocsp_response.nil?
         authority_info_access = cert.extensions.find do |extension|
           extension.oid == "authorityInfoAccess"
         end
@@ -57,10 +60,12 @@ module SSLTest
 
         return ocsp_soft_fail_return("Serial check failed (URI: #{ocsp_uri})", unicity_key) unless response_certificate_id.serial == certificate_id.serial
 
-        @ocsp_response_cache[unicity_key] = { status: status, reason: reason, revocation_time: revocation_time, next_update: next_update }
+        ocsp_response = { status: status, reason: reason, revocation_time: revocation_time }
+        # Cache until the response's next_update. If it's already past (or
+        # missing), skip caching and just use the fresh result for this call.
+        ttl = next_update && next_update - Time.now
+        cache.write(response_cache_key, ocsp_response, expires_in: ttl) if ttl && ttl > 0
       end
-
-      ocsp_response = @ocsp_response_cache[unicity_key]
 
       return [true, revocation_reason_to_string(ocsp_response[:reason]), ocsp_response[:revocation_time]] if ocsp_response[:status] == OpenSSL::OCSP::V_CERTSTATUS_REVOKED
       :ocsp_ok
@@ -135,7 +140,7 @@ module SSLTest
 
     def ocsp_soft_fail_return(reason, unicity_key = nil)
        error = [false, reason, nil]
-       @ocsp_request_error_cache[unicity_key] = { error: error, expires: Time.now + ERROR_CACHE_DURATION } if unicity_key
+       cache.write("#{CACHE_NAMESPACE}/ocsp-error/#{unicity_key}", error, expires_in: ERROR_CACHE_DURATION) if unicity_key
        error
     end
   end

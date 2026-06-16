@@ -15,12 +15,11 @@ RSpec.configure do |config|
   # one, and examples tagged `:retry` are re-run a few times (via rspec-retry) so
   # transient network blips don't fail the suite.
   config.verbose_retry = true
-  config.display_try_failure_messages = true
   config.default_sleep_interval = 1
 end
 
 describe SSLTest do
-  before { SSLTest.flush_cache }
+  before { SSLTest.cache.clear }
 
   let(:proxy_thread) { nil }
 
@@ -186,7 +185,7 @@ describe SSLTest do
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
       # make sure both were used
-      expect(SSLTest.cache_size).to match({
+      expect(SSLTest.cache.size).to match({
         crl:  hash_including(lists: 1),
         ocsp: hash_including(responses: 1, errors: 0)
       })
@@ -237,35 +236,8 @@ describe SSLTest do
     end
   end
 
-  describe '.cache_size' do
-    before { SSLTest.flush_cache }
-
-    it "returns 0 by default" do
-      expect(SSLTest.cache_size).to eq({
-        crl:  { bytes: 0,  lists: 0 },
-        ocsp: { bytes: 0, errors: 0, responses: 0 }
-      })
-    end
-
-    it "returns CRL cache size properly" do
-      SSLTest.send(:follow_crl_redirects, URI("http://crl.certigna.fr/certigna.crl")) # 1.1k
-      SSLTest.send(:follow_crl_redirects, URI("http://crl3.digicert.com/DigiCertTLSHybridECCSHA3842020CA1-1.crl")) # 26k
-      expect(SSLTest.cache_size[:crl][:lists]).to eq(2)
-      expect(SSLTest.cache_size[:crl][:bytes]).to be > 2000
-    end
-
-    it "returns OCSP cache size properly" do
-      SSLTest.test("https://github.com")
-      expect(SSLTest.cache_size[:ocsp][:responses]).to eq(1)
-      expect(SSLTest.cache_size[:ocsp][:errors]).to eq(0)
-      expect(SSLTest.cache_size[:ocsp][:bytes]).to be > 150
-      expect(SSLTest.cache_size[:crl][:lists]).to eq(1)
-      expect(SSLTest.cache_size[:crl][:bytes]).to be > 500
-    end
-  end
-
   describe '.follow_crl_redirects' do
-    before { SSLTest.flush_cache }
+    before { SSLTest.cache.clear }
     # 19MB: http://crl3.digicert.com/ssca-sha2-g6.crl
     it "fetch CRL list and updates cache" do
       uri = URI("http://crl.certigna.fr/certigna.crl")
@@ -274,11 +246,11 @@ describe SSLTest do
       expect(error).to be_nil
 
       # Check cache status
-      cache = SSLTest.instance_variable_get('@crl_response_cache')
-      expect(cache.size).to equal 1
-      expect(cache.keys).to match_array [uri]
-      expect(cache[uri].keys).to match_array [:body, :expires, :etag, :last_mod]
-      expect(cache[uri][:expires]).to be > (Time.now + 3590)
+      cache_key = "ssl-test/crl/#{uri}"
+      entry = SSLTest.cache.read(cache_key)
+      expect(entry).not_to be_nil
+      expect(entry.keys).to match_array [:body, :expires, :etag, :last_mod]
+      expect(entry[:expires]).to be > (Time.now + 3590)
 
       # Make sure we return value from cache
       body2, error2 = nil, nil
@@ -287,11 +259,39 @@ describe SSLTest do
       expect(body2).to be(body) # using cache
 
       # Make sure we return cached value in case of 304
-      cache[uri][:expires] = Time.now # cache is now expired
+      SSLTest.cache.write(cache_key, entry.merge(expires: Time.now), expires_in: nil) # cache is now expired
       body2, error2 = nil, nil
       time = Benchmark.realtime { body2, error2 = SSLTest.send(:follow_crl_redirects, uri) }
       expect(time).to be > 0.001 # a request is made
       expect(body2).to be(body) # but we're still using cache because it's a 304
+    end
+  end
+
+  describe '.cache' do
+    # Restore the default in-process store after tests that swap the backend so
+    # global state doesn't leak between examples.
+    after { SSLTest.cache = SSLTest::MemoryStore.new }
+
+    it "defaults to a MemoryStore when Rails is not available" do
+      SSLTest.instance_variable_set(:@cache, nil) # reset memoized default
+      expect(defined?(Rails)).to be_nil
+      expect(SSLTest.cache).to be_a SSLTest::MemoryStore
+    end
+
+    it "uses the configured backend for CRL and OCSP" do
+      store = SSLTest::MemoryStore.new
+      SSLTest.cache = store
+      expect(store).to receive(:write).at_least(:once).and_call_original
+      expect(store).to receive(:read).at_least(:once).and_call_original
+      SSLTest.test("https://github.com")
+    end
+
+    it "cache_size (removed in 2.0) raises pointing to cache.size" do
+      expect { SSLTest.cache_size }.to raise_error(NoMethodError, /SSLTest\.cache\.size/)
+    end
+
+    it "flush_cache (removed in 2.0) raises pointing to cache.clear" do
+      expect { SSLTest.flush_cache }.to raise_error(NoMethodError, /SSLTest\.cache\.clear/)
     end
   end
 
@@ -439,7 +439,7 @@ describe SSLTest do
       expect(valid).to eq(true)
       expect(cert).to eq(cert)
       # make sure both were used
-      expect(SSLTest.cache_size).to match({
+      expect(SSLTest.cache.size).to match({
         crl:  hash_including(lists: 1),
         ocsp: hash_including(responses: 1, errors: 0)
       })

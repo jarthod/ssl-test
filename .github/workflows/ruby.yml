@@ -3,6 +3,14 @@ on: [push]
 jobs:
   specs:
     runs-on: ubuntu-22.04
+    services:
+      redis:
+        image: redis
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+      memcached:
+        image: memcached
+        ports: ['11211:11211']
     steps:
     - uses: actions/checkout@v2
     - name: Set up Ruby

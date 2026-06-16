@@ -3,6 +3,7 @@ require "net/https"
 require "openssl"
 require "uri"
 require "ssl-test/object_size"
+require "ssl-test/memory_store"
 require "ssl-test/ocsp"
 require "ssl-test/crl"
 
@@ -10,7 +11,11 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"1.6.0"
+  VERSION = -"2.0.0"
+
+  # Prefix for all cache keys so SSLTest entries coexist cleanly inside a shared
+  # cache (e.g. Rails.cache).
+  CACHE_NAMESPACE = -"ssl-test"
 
   class << self
     def test_url url, open_timeout: 5, read_timeout: 5, proxy_host: nil, proxy_port: nil, redirection_limit: 5
@@ -79,24 +84,30 @@ module SSLTest
       end
     end
 
-    def cache_size
-      {
-        crl: {
-          lists: @crl_response_cache&.size || 0,
-          bytes: ObjectSize.size(@crl_response_cache)
-        },
-        ocsp: {
-          responses: @ocsp_response_cache&.size || 0,
-          errors: @ocsp_request_error_cache&.size || 0,
-          bytes: ObjectSize.size(@ocsp_response_cache) + ObjectSize.size(@ocsp_request_error_cache)
-        }
-      }
+    # The cache backend used to store CRL and OCSP responses. Defaults to
+    # Rails.cache when running inside Rails (shared and compressed via Dalli when
+    # using memcache), otherwise to an in-process MemoryStore. Assign any object
+    # responding to the Rails.cache-style API (read/write/delete).
+    def cache
+      @cache ||= default_cache
     end
 
+    def cache= store
+      @cache = store
+    end
+
+    # Removed in 2.0: introspection now lives on the cache store. With the
+    # built-in MemoryStore use SSLTest.cache.size; other backends (e.g. memcache)
+    # can't be enumerated.
+    def cache_size
+      raise NoMethodError, "SSLTest.cache_size was removed in 2.0; use SSLTest.cache.size instead (available on the built-in SSLTest::MemoryStore)."
+    end
+
+    # Removed in 2.0: clearing now lives on the cache store. With the built-in
+    # MemoryStore use SSLTest.cache.clear (note: calling clear on a shared backend
+    # like Rails.cache would wipe unrelated entries).
     def flush_cache
-      @crl_response_cache = {}
-      @ocsp_response_cache = {}
-      @ocsp_request_error_cache = {}
+      raise NoMethodError, "SSLTest.flush_cache was removed in 2.0; use SSLTest.cache.clear instead."
     end
 
     def logger= logger
@@ -104,6 +115,14 @@ module SSLTest
     end
 
     private
+
+    def default_cache
+      if defined?(Rails) && Rails.respond_to?(:cache) && Rails.cache
+        Rails.cache
+      else
+        MemoryStore.new
+      end
+    end
 
     def revocation_message(revoked, revocation_date, message)
       if revoked

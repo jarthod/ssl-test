@@ -22,4 +22,10 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec"
   spec.add_development_dependency "rspec-retry"
   spec.add_development_dependency "webrick"
+  # Used to verify SSLTest.cache works with the classic Rails/ActiveSupport
+  # cache stores (MemoryStore, FileStore, NullStore, MemCacheStore via dalli,
+  # RedisCacheStore via redis).
+  spec.add_development_dependency "activesupport"
+  spec.add_development_dependency "dalli"
+  spec.add_development_dependency "redis"
 end

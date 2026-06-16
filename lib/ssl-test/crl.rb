@@ -1,6 +1,13 @@
 module SSLTest
   module CRL
     CRL_CACHE_DURATION = 3600 # 1 hour
+    # How long a CRL entry is kept in the backend before being dropped if it's no
+    # longer used. This is much longer than CRL_CACHE_DURATION so the cached body
+    # and caching headers survive past the revalidation window (for cheap 304s),
+    # but bounded so unused lists don't pile up forever in a shared/long-lived
+    # backend (e.g. memcache). It's refreshed on every fetch (200/304), so
+    # actively-used entries never expire from this.
+    CRL_CACHE_RETENTION = 100 * CRL_CACHE_DURATION # ~4 days
 
     # A note about caching:
     # I choose to only cache the raw HTTP body here (and not the parsed list or better a hash
@@ -54,10 +61,14 @@ module SSLTest
     def follow_crl_redirects(uri, open_timeout: 5, read_timeout: 5, redirection_limit: 5, proxy_host: nil, proxy_port: nil)
       return [nil, "Too many redirections (> #{redirection_limit})"] if redirection_limit == 0
 
-      # Return file from cache if not expired
-      @crl_response_cache ||= {}
-      cache_entry = @crl_response_cache[uri]
-      return [cache_entry[:body], nil] if cache_entry && cache_entry.fetch(:expires) > Time.now
+      # Return file from cache if not expired.
+      # CRL entries are kept in the backend for CRL_CACHE_RETENTION (much longer
+      # than CRL_CACHE_DURATION) so the cached body + caching headers survive past
+      # the freshness window and can be revalidated cheaply with a conditional
+      # request (304). We track our own freshness window with the :expires field.
+      cache_key = "#{CACHE_NAMESPACE}/crl/#{uri}"
+      cache_entry = cache.read(cache_key)
+      return [cache_entry[:body], nil] if cache_entry && cache_entry[:expires] > Time.now
 
       @logger&.debug { "SSLTest   + CRL: fetch URI #{uri}" }
       path = uri.path == "" ? "/" : uri.path
@@ -67,9 +78,9 @@ module SSLTest
 
       req = Net::HTTP::Get.new(path)
       # Include conditional caching headers from cache to save bandwidth if list didn't change (304)
-      if etag = cache_entry&.fetch(:etag)
+      if etag = cache_entry&.[](:etag)
         req["If-None-Match"] = etag
-      elsif last_mod = cache_entry&.fetch(:last_mod)
+      elsif last_mod = cache_entry&.[](:last_mod)
         req["If-Modified-Since"] = last_mod
       end
       http_response = http.request(req)
@@ -77,19 +88,19 @@ module SSLTest
       when Net::HTTPNotModified
         # No changes, bump cache expiration time and return cached body
         @logger&.debug { "SSLTest   + CRL: 304 Not Modified" }
-        @crl_response_cache[uri][:expires] = Time.now + CRL_CACHE_DURATION
+        cache.write(cache_key, cache_entry.merge(expires: Time.now + CRL_CACHE_DURATION), expires_in: CRL_CACHE_RETENTION)
         [cache_entry[:body], nil]
       when Net::HTTPSuccess
         # Success, update (or add to) cache and return frech body
         @logger&.debug { "SSLTest   + CRL: 200 OK (#{http_response.body.bytesize} bytes)" }
         @logger&.warn { "SSLTest   + CRL: Warning: massive file size" } if http_response.body.bytesize > 1024**2 # 1MB
         @logger&.warn { "SSLTest   + CRL: Warning: no caching headers on #{uri}" } unless http_response["Etag"] or http_response["Last-Modified"]
-        @crl_response_cache[uri] = {
+        cache.write(cache_key, {
           body: http_response.body,
           expires: Time.now + CRL_CACHE_DURATION,
           etag: http_response["Etag"],
           last_mod: http_response["Last-Modified"]
-        }
+        }, expires_in: CRL_CACHE_RETENTION)
         [http_response.body, nil]
       when Net::HTTPRedirection
         follow_crl_redirects(URI(http_response["location"]), open_timeout: open_timeout, read_timeout: read_timeout, proxy_host: proxy_host, proxy_port: proxy_port, redirection_limit: redirection_limit - 1)
