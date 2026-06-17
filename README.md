@@ -111,13 +111,11 @@ CRL responses can be big so when they expires they are re-validated with the ser
 
 #### Cache backend
 
-The cache backend is configurable. By default SSLTest uses `Rails.cache` when running inside Rails (so you get a shared, compressed cache for free, e.g. memcache via Dalli), and falls back to a simple in-process store (`SSLTest::MemoryStore`) otherwise.
-
-You can assign any object implementing the `Rails.cache`-style API (`read`, `write(key, value, expires_in:)`, `delete`):
+The cache backend is configurable. By default SSLTest uses a simple in-process store (`SSLTest::MemoryStore`). To share the cache across processes and get compression, assign any object implementing the `Rails.cache`-style API (`read`, `write(key, value, expires_in:)`, `delete`):
 
 ```ruby
-SSLTest.cache = Rails.cache          # explicit (this is the default under Rails)
-SSLTest.cache = SSLTest::MemoryStore.new  # force the in-process store
+SSLTest.cache = Rails.cache          # shared + compressed (e.g. memcache via Dalli)
+SSLTest.cache = SSLTest::MemoryStore.new  # the default in-process store
 SSLTest.cache = MyCustomStore.new    # anything responding to read/write/delete
 ```
 
@@ -131,6 +129,11 @@ SSLTest.cache = ActiveSupport::Cache::MemoryStore.new(size: 64.megabytes, compre
 ```
 
 (It auto-prunes when it exceeds `size`, unlike the built-in store. Note the introspection helpers below are specific to `SSLTest::MemoryStore`.)
+
+> **Using memcached (Dalli)?** CRL lists can be large (commonly several MB, up to ~20MB for busy CAs). memcached rejects values over its max item size — 1MB by default — which Dalli surfaces as `Dalli::ValueOverMaxSize` (logged and skipped by `ActiveSupport::Cache::MemCacheStore`, so the test still passes but the list isn't cached and gets re-downloaded every time). To actually cache big CRLs, raise the limit on **both** sides to at least 64MB:
+>
+> - memcached server: start it with `-I 64m`
+> - Dalli client: `Dalli::Client.new(servers, value_max_bytes: 64 * 1024 * 1024)`, or via Rails: `config.cache_store = :mem_cache_store, servers, { value_max_bytes: 64.megabytes }`
 
 You can check the size of the **built-in** store with `SSLTest.cache.size`, which returns:
 
@@ -192,7 +195,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 See also github releases: https://github.com/jarthod/ssl-test/releases
 
-* 2.0.0 - 2026-06-16: Make the cache backend configurable (defaults to `Rails.cache` when available, else an in-process `SSLTest::MemoryStore`) so responses can be shared across processes and compressed (e.g. memcache via Dalli). Assign your own store with `SSLTest.cache = ...` (any object responding to `read`/`write`/`delete`). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
+* 2.0.0 - 2026-06-16: Make the cache backend configurable. The default stays an in-process `SSLTest::MemoryStore`, but you can now assign any object responding to the `Rails.cache`-style API (`read`/`write`/`delete`) with `SSLTest.cache = Rails.cache` to share responses across processes and get compression (e.g. memcache via Dalli — see the memcached note in the Caching section about raising the max value size for large CRLs). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
 * 1.6.0 - 2026-06-16: Check revocation with CRL first and fall back to OCSP (was OCSP first) to reduce revocation detection delay
 * 1.5.0 - 2025-11-28: Add support for local certificates testing and HTTP proxies (#8), changed `#test` method into `#test_url` and `#test_cert` (`#test` remains as an alias for `#test_url` for backward-compatibility)
 * 1.4.1 - 2022-10-24: Add support for "tcps://" scheme

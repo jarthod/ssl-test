@@ -272,9 +272,8 @@ describe SSLTest do
     # global state doesn't leak between examples.
     after { SSLTest.cache = SSLTest::MemoryStore.new }
 
-    it "defaults to a MemoryStore when Rails is not available" do
+    it "defaults to an in-process MemoryStore" do
       SSLTest.instance_variable_set(:@cache, nil) # reset memoized default
-      expect(defined?(Rails)).to be_nil
       expect(SSLTest.cache).to be_a SSLTest::MemoryStore
     end
 

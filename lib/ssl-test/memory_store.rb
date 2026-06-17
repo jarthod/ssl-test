@@ -1,9 +1,9 @@
 module SSLTest
-  # A tiny in-process cache store used as the default backend when Rails.cache
-  # isn't available. It mirrors the small subset of the ActiveSupport::Cache /
-  # Rails.cache API that SSLTest relies on (read/write/delete) so the two are
-  # interchangeable. Access is guarded by a Mutex because SSLTest is typically
-  # used from threaded servers (e.g. Puma).
+  # A tiny in-process cache store used as the default backend. It mirrors the
+  # small subset of the ActiveSupport::Cache / Rails.cache API that SSLTest relies
+  # on (read/write/delete) so they're interchangeable (assign Rails.cache via
+  # SSLTest.cache= to share/compress across processes). Access is guarded by a
+  # Mutex because SSLTest is typically used from threaded servers (e.g. Puma).
   #
   # Unlike a shared/compressed backend (memcache via Dalli), this store is
   # per-process, uncompressed and unbounded, so be careful about memory usage if

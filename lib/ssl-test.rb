@@ -84,12 +84,12 @@ module SSLTest
       end
     end
 
-    # The cache backend used to store CRL and OCSP responses. Defaults to
-    # Rails.cache when running inside Rails (shared and compressed via Dalli when
-    # using memcache), otherwise to an in-process MemoryStore. Assign any object
-    # responding to the Rails.cache-style API (read/write/delete).
+    # The cache backend used to store CRL and OCSP responses. Defaults to an
+    # in-process MemoryStore. To share the cache across processes (and get
+    # compression), assign Rails.cache (or any object responding to the
+    # Rails.cache-style API: read/write/delete), e.g. `SSLTest.cache = Rails.cache`.
     def cache
-      @cache ||= default_cache
+      @cache ||= MemoryStore.new
     end
 
     def cache= store
@@ -115,14 +115,6 @@ module SSLTest
     end
 
     private
-
-    def default_cache
-      if defined?(Rails) && Rails.respond_to?(:cache) && Rails.cache
-        Rails.cache
-      else
-        MemoryStore.new
-      end
-    end
 
     def revocation_message(revoked, revocation_date, message)
       if revoked
