@@ -12,8 +12,8 @@ RSpec.configure do |config|
   # The error/revocation examples below hit several public TLS test endpoints
   # (badssl.com, testserver.host, ssl.com) which intermittently reset connections
   # under load. They're spread across a few providers to avoid hammering a single
-  # one, and examples tagged `:retry` are re-run a few times (via rspec-retry) so
-  # transient network blips don't fail the suite.
+  # one, and the network-hitting describe blocks are tagged `retry: 5` (via
+  # rspec-retry) so transient network blips don't fail the suite.
   config.verbose_retry = true
   config.default_sleep_interval = 1
 end
@@ -26,7 +26,7 @@ describe SSLTest do
 
   after(:each) { proxy_thread&.kill }
 
-  describe '.test_url' do
+  describe '.test_url', retry: 5 do # examples hit live TLS/CRL/OCSP endpoints
     it "returns no error on valid SNI website" do
       valid, error, cert = SSLTest.test("https://www.mycs.com")
       expect(error).to be_nil
@@ -59,35 +59,35 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on self signed certificate", :retry => 5 do
+    it "returns error on self signed certificate" do
       valid, error, cert = SSLTest.test("https://self-signed.testserver.host/")
       expect(error).to eq ("error code 18: self-signed certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on incomplete chain", :retry => 5 do
+    it "returns error on incomplete chain" do
       valid, error, cert = SSLTest.test("https://incomplete-chain.badssl.com/")
       expect(error).to eq ("error code 20: unable to get local issuer certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on untrusted root", :retry => 5 do
+    it "returns error on untrusted root" do
       valid, error, cert = SSLTest.test("https://untrusted-root.testserver.host/")
       expect(error).to eq ("error code 19: self-signed certificate in certificate chain")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on invalid host", :retry => 5 do
+    it "returns error on invalid host" do
       valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
       expect(error).to include('error code 62: hostname mismatch')
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on expired cert", :retry => 5 do
+    it "returns error on expired cert" do
       valid, error, cert = SSLTest.test("https://expired-rsa-dv.ssl.com/")
       expect(error).to eq ("error code 10: certificate has expired")
       expect(valid).to eq(false)
@@ -128,7 +128,7 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on revoked cert (CRL)", :retry => 5 do
+    it "returns error on revoked cert (CRL)" do
       # CRL is tried first and detects the revocation, so OCSP is never used
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
       expect(SSLTest).not_to receive(:test_ocsp_revocation)
@@ -236,7 +236,7 @@ describe SSLTest do
     end
   end
 
-  describe '.follow_crl_redirects' do
+  describe '.follow_crl_redirects', retry: 5 do # fetches a live CRL
     before { SSLTest.cache.clear }
     # 19MB: http://crl3.digicert.com/ssca-sha2-g6.crl
     it "fetch CRL list and updates cache" do
@@ -267,7 +267,7 @@ describe SSLTest do
     end
   end
 
-  describe '.cache' do
+  describe '.cache', retry: 5 do # some examples hit live CRL/OCSP endpoints
     # Restore the default in-process store after tests that swap the backend so
     # global state doesn't leak between examples.
     after { SSLTest.cache = SSLTest::MemoryStore.new }
@@ -294,7 +294,7 @@ describe SSLTest do
     end
   end
 
-  describe '.test_cert' do
+  describe '.test_cert', retry: 5 do # revocation checks hit live CRL/OCSP endpoints
     it "returns no error on valid SNI website" do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_mycs_com_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_mycs_com_ca_bundle.pem')))
