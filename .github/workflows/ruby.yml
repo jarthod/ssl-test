@@ -3,6 +3,10 @@ on: [push]
 jobs:
   specs:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ['3.2', '3.3', '3.4']
     services:
       redis:
         image: redis
@@ -16,7 +20,7 @@ jobs:
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: '3.1'
+        ruby-version: ${{ matrix.ruby-version }}
         bundler-cache: true # runs 'bundle install' and caches installed gems automatically
     - name: Run specs
       run: |
