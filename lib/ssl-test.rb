@@ -11,7 +11,7 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"2.0.0"
+  VERSION = -"2.0.1"
 
   # Prefix for all cache keys so SSLTest entries coexist cleanly inside a shared
   # cache (e.g. Rails.cache).
