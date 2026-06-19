@@ -77,12 +77,13 @@ module SSLTest
       http.read_timeout = read_timeout
 
       req = Net::HTTP::Get.new(path)
-      # Include conditional caching headers from cache to save bandwidth if list didn't change (304)
-      if etag = cache_entry&.[](:etag)
-        req["If-None-Match"] = etag
-      elsif last_mod = cache_entry&.[](:last_mod)
-        req["If-Modified-Since"] = last_mod
-      end
+      # Include conditional caching headers from cache to save bandwidth if the
+      # list didn't change (304). Send both validators when present: some
+      # CDN-backed CAs (e.g. DigiCert) serve per-node ETags they won't honor via
+      # If-None-Match but will revalidate via If-Modified-Since, so sending only
+      # the ETag defeats the 304 and re-downloads the whole list every time.
+      req["If-None-Match"] = cache_entry[:etag] if cache_entry&.[](:etag)
+      req["If-Modified-Since"] = cache_entry[:last_mod] if cache_entry&.[](:last_mod)
       http_response = http.request(req)
       case http_response
       when Net::HTTPNotModified
@@ -93,7 +94,7 @@ module SSLTest
       when Net::HTTPSuccess
         # Success, update (or add to) cache and return frech body
         @logger&.debug { "SSLTest   + CRL: 200 OK (#{http_response.body.bytesize} bytes)" }
-        @logger&.warn { "SSLTest   + CRL: Warning: massive file size" } if http_response.body.bytesize > 1024**2 # 1MB
+        @logger&.warn { "SSLTest   + CRL: Warning: massive file size (#{http_response.body.bytesize} bytes)" } if http_response.body.bytesize > 1024**2 # 1MB
         @logger&.warn { "SSLTest   + CRL: Warning: no caching headers on #{uri}" } unless http_response["Etag"] or http_response["Last-Modified"]
         cache.write(cache_key, {
           body: http_response.body,
