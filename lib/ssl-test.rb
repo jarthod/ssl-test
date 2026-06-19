@@ -114,6 +114,23 @@ module SSLTest
       @logger = logger
     end
 
+    # The order in which revocation check methods are tried for each certificate.
+    # The first method to return a conclusive answer (ok or revoked) wins; the
+    # next is only tried when the previous one errors out (missing endpoint,
+    # network error, etc.). Defaults to CRL first (since 1.6) to reduce the
+    # revocation propagation delay. Set to %i[ocsp crl] to check OCSP first.
+    def revocation_order
+      @revocation_order ||= %i[crl ocsp]
+    end
+
+    def revocation_order= order
+      order = Array(order).map { |m| m.to_sym }
+      unless order.sort == %i[crl ocsp]
+        raise ArgumentError, "SSLTest.revocation_order must be %i[crl ocsp] or %i[ocsp crl], got #{order.inspect}"
+      end
+      @revocation_order = order
+    end
+
     private
 
     def revocation_message(revoked, revocation_date, message)
@@ -147,24 +164,35 @@ module SSLTest
       chain[0..-2].each_with_index do |cert, i|
         @logger&.debug { "SSLTest + test_chain_revocation: #{cert_field_to_hash(cert.subject)['CN']}" }
 
-        # Try with CRL first
-        crl_result = test_crl_revocation(cert, issuer: chain[i + 1], chain: chain, **options)
-        @logger&.debug { "SSLTest   + CRL: #{crl_result}" }
-        next if crl_result == :crl_ok # passed, go to next cert
-        return crl_result if crl_result[0] == true # revoked
+        # Try each revocation method in the configured order, falling back to the
+        # next one only when the current method errors out.
+        errors = {}
+        passed = false
+        revocation_order.each do |method|
+          result = test_revocation(method, cert, issuer: chain[i + 1], chain: chain, **options)
+          @logger&.debug { "SSLTest   + #{method.to_s.upcase}: #{result}" }
+          if result == :"#{method}_ok" # passed, go to next cert
+            passed = true
+            break
+          end
+          return result if result[0] == true # revoked
+          errors[method] = result[1] # errored, try the next method
+        end
+        next if passed
 
-        # Otherwise it means there was an error so let's try with OCSP instead
-        ocsp_result = test_ocsp_revocation(cert, issuer: chain[i + 1], chain: chain, **options)
-        @logger&.debug { "SSLTest   + OCSP: #{ocsp_result}" }
-        next if ocsp_result == :ocsp_ok # passed, go to next cert
-        return ocsp_result if ocsp_result[0] == true # revoked
-
-        # If both method failed, return a soft fail with a combination of both error messages
-        return [false, "CRL: #{crl_result[1]}, OCSP: #{ocsp_result[1]}", nil]
+        # If all methods failed, return a soft fail with a combination of the error messages
+        return [false, errors.map { |method, message| "#{method.to_s.upcase}: #{message}" }.join(", "), nil]
       end
 
       # If all test passed, the certificate is not revoked
       [false, nil, nil]
+    end
+
+    def test_revocation method, cert, **options
+      case method
+      when :crl  then test_crl_revocation(cert, **options)
+      when :ocsp then test_ocsp_revocation(cert, **options)
+      end
     end
 
     def cert_field_to_hash field

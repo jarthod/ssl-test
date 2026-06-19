@@ -70,6 +70,13 @@ cert # => #<OpenSSL::X509::Certificate...>
 
 If the CRL is missing, invalid or unreachable the certificate revocation will be tested using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol).
 
+You can swap the order if you'd rather check OCSP first and only fall back to CRL on error (the default is CRL first, since 1.6, to reduce the revocation propagation delay):
+
+```ruby
+SSLTest.revocation_order = %i[ocsp crl]   # OCSP first, CRL fallback
+SSLTest.revocation_order = %i[crl ocsp]   # the default: CRL first, OCSP fallback
+```
+
 If both CRL and OCSP tests are impossible, the certificate will still be considered valid but with an error message:
 
 ```ruby
@@ -195,7 +202,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 See also github releases: https://github.com/jarthod/ssl-test/releases
 
-* 2.0.0 - 2026-06-16: Make the cache backend configurable. The default stays an in-process `SSLTest::MemoryStore`, but you can now assign any object responding to the `Rails.cache`-style API (`read`/`write`/`delete`) with `SSLTest.cache = Rails.cache` to share responses across processes and get compression (e.g. memcache via Dalli — see the memcached note in the Caching section about raising the max value size for large CRLs). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
+* 2.0.0 - 2026-06-16: Make the revocation check order configurable via `SSLTest.revocation_order` (`%i[crl ocsp]` by default, set `%i[ocsp crl]` to check OCSP first). Make the cache backend configurable. The default stays an in-process `SSLTest::MemoryStore`, but you can now assign any object responding to the `Rails.cache`-style API (`read`/`write`/`delete`) with `SSLTest.cache = Rails.cache` to share responses across processes and get compression (e.g. memcache via Dalli — see the memcached note in the Caching section about raising the max value size for large CRLs). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
 * 1.6.0 - 2026-06-16: Check revocation with CRL first and fall back to OCSP (was OCSP first) to reduce revocation detection delay
 * 1.5.0 - 2025-11-28: Add support for local certificates testing and HTTP proxies (#8), changed `#test` method into `#test_url` and `#test_cert` (`#test` remains as an alias for `#test_url` for backward-compatibility)
 * 1.4.1 - 2022-10-24: Add support for "tcps://" scheme

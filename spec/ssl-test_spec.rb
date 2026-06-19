@@ -488,4 +488,51 @@ describe SSLTest do
       end
     end
   end
+
+  describe '.revocation_order' do # no network: dispatch logic is stubbed
+    after { SSLTest.revocation_order = %i[crl ocsp] } # reset to the default
+
+    let(:cert)   { OpenSSL::X509::Certificate.new }
+    let(:issuer) { OpenSSL::X509::Certificate.new }
+    let(:chain)  { [cert, issuer] }
+
+    it "defaults to CRL first" do
+      expect(SSLTest.revocation_order).to eq(%i[crl ocsp])
+    end
+
+    it "validates the value" do
+      expect { SSLTest.revocation_order = %i[crl] }.to raise_error(ArgumentError)
+      expect { SSLTest.revocation_order = %i[ocsp bogus] }.to raise_error(ArgumentError)
+    end
+
+    it "checks CRL first by default, falling back to OCSP on error" do
+      expect(SSLTest).to receive(:test_crl_revocation).ordered.and_return([false, "CRL boom", nil])
+      expect(SSLTest).to receive(:test_ocsp_revocation).ordered.and_return(:ocsp_ok)
+      result = SSLTest.send(:test_chain_revocation, chain)
+      expect(result).to eq([false, nil, nil])
+    end
+
+    it "checks OCSP first when configured, falling back to CRL on error" do
+      SSLTest.revocation_order = %i[ocsp crl]
+      expect(SSLTest).to receive(:test_ocsp_revocation).ordered.and_return([false, "OCSP boom", nil])
+      expect(SSLTest).to receive(:test_crl_revocation).ordered.and_return(:crl_ok)
+      result = SSLTest.send(:test_chain_revocation, chain)
+      expect(result).to eq([false, nil, nil])
+    end
+
+    it "does not try the second method when the first one passes" do
+      SSLTest.revocation_order = %i[ocsp crl]
+      expect(SSLTest).to receive(:test_ocsp_revocation).and_return(:ocsp_ok)
+      expect(SSLTest).not_to receive(:test_crl_revocation)
+      expect(SSLTest.send(:test_chain_revocation, chain)).to eq([false, nil, nil])
+    end
+
+    it "combines error messages in the configured order when all methods fail" do
+      SSLTest.revocation_order = %i[ocsp crl]
+      allow(SSLTest).to receive(:test_ocsp_revocation).and_return([false, "OCSP boom", nil])
+      allow(SSLTest).to receive(:test_crl_revocation).and_return([false, "CRL boom", nil])
+      _revoked, message, _date = SSLTest.send(:test_chain_revocation, chain)
+      expect(message).to eq("OCSP: OCSP boom, CRL: CRL boom")
+    end
+  end
 end
