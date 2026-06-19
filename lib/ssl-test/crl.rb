@@ -47,11 +47,19 @@ module SSLTest
       response = OpenSSL::X509::CRL.new http_response
       return [false, "Signature verification failed (URI: #{crl_uri})", nil] unless response.verify(issuer.public_key)
 
+      # Fast path: scan the raw response for the cert's serial encoded as DER.
+      # In most case (not revoked) this lets us skip response.revoked, which
+      # instantiate the *entire* revocation list as Ruby objects (>1M objects for busy CAs)
+      serial_der = OpenSSL::ASN1::Integer.new(cert.serial).to_der
+      return :crl_ok unless response.to_der.include?(serial_der)
+
+      # The serial's bytes appear (a real hit, or a rare collision):
+      # confirm authoritatively and pull the reason/date. The costly revoked-list
+      # materialisation only happens here, i.e. for actually-revoked certs.
       revoked = response.revoked.find { |r| r.serial == cert.serial }
       if revoked
         reason = revoked.extensions.find {|e| e.oid == "CRLReason"}&.value
         return [true, reason || "Unknown reason", revoked.time]
-      else
       end
 
       :crl_ok

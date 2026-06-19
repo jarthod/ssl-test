@@ -132,6 +132,8 @@ describe SSLTest do
       # CRL is tried first and detects the revocation, so OCSP is never used
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
       expect(SSLTest).not_to receive(:test_ocsp_revocation)
+      # On a serial byte-match we fall back to #revoked to extract the reason/date
+      expect_any_instance_of(OpenSSL::X509::CRL).to receive(:revoked).and_call_original
       valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
       expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
       expect(valid).to eq(false)
@@ -161,6 +163,9 @@ describe SSLTest do
       # CRL is tried first and succeeds for both certs, so OCSP is never used
       expect(SSLTest).to receive(:follow_crl_redirects).twice.and_call_original
       expect(SSLTest).not_to receive(:test_ocsp_revocation)
+      # Both certs are absent from their CRL, so the serial byte-search short-circuits
+      # and we never materialise the (potentially huge) revoked list.
+      expect_any_instance_of(OpenSSL::X509::CRL).not_to receive(:revoked)
       valid, error, cert = SSLTest.test("https://www.demarches-simplifiees.fr")
       expect(error).to be_nil
       expect(valid).to eq(true)
