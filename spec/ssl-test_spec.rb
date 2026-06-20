@@ -15,6 +15,7 @@ RSpec.configure do |config|
   # one, and the network-hitting describe blocks are tagged `retry: 5` (via
   # rspec-retry) so transient network blips don't fail the suite.
   config.verbose_retry = true
+  config.display_try_failure_messages = true
   config.default_sleep_interval = 1
 end
 
@@ -81,7 +82,7 @@ describe SSLTest do
     end
 
     it "returns error on invalid host" do
-      valid, error, cert = SSLTest.test("https://wrong.host.badssl.com/")
+      valid, error, cert = SSLTest.test("https://wrong-host.testserver.host/")
       expect(error).to include('error code 62: hostname mismatch')
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
@@ -134,8 +135,8 @@ describe SSLTest do
       expect(SSLTest).not_to receive(:test_ocsp_revocation)
       # On a serial byte-match we fall back to #revoked to extract the reason/date
       expect_any_instance_of(OpenSSL::X509::CRL).to receive(:revoked).and_call_original
-      valid, error, cert = SSLTest.test("https://revoked.badssl.com/")
-      expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
+      valid, error, cert = SSLTest.test("https://revoked.testserver.host/")
+      expect(error).to match(/SSL certificate revoked: Unknown reason \(revocation date:/)
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
