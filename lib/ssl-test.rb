@@ -11,7 +11,7 @@ module SSLTest
   extend OCSP
   extend CRL
 
-  VERSION = -"2.0.1"
+  VERSION = -"2.1.0"
 
   # Prefix for all cache keys so SSLTest entries coexist cleanly inside a shared
   # cache (e.g. Rails.cache).
@@ -117,10 +117,11 @@ module SSLTest
     # The order in which revocation check methods are tried for each certificate.
     # The first method to return a conclusive answer (ok or revoked) wins; the
     # next is only tried when the previous one errors out (missing endpoint,
-    # network error, etc.). Defaults to CRL first (since 1.6) to reduce the
-    # revocation propagation delay. Set to %i[ocsp crl] to check OCSP first.
+    # network error, etc.). Defaults to OCSP first, since CRLs can be large and
+    # checking them is significantly more memory- and CPU-intensive. Set to
+    # %i[crl ocsp] to check CRL first (e.g. to reduce revocation propagation delay).
     def revocation_order
-      @revocation_order ||= %i[crl ocsp]
+      @revocation_order ||= %i[ocsp crl]
     end
 
     def revocation_order= order

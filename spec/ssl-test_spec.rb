@@ -82,8 +82,8 @@ describe SSLTest do
     end
 
     it "returns error on invalid host" do
-      valid, error, cert = SSLTest.test("https://wrong-host.testserver.host/")
-      expect(error).to include('error code 62: hostname mismatch')
+      valid, error, cert = SSLTest.test("https://db3.updn.io/")
+      expect(error).to eq('error code 62: hostname mismatch')
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
@@ -112,7 +112,7 @@ describe SSLTest do
     end
 
     it "reports revocation exceptions" do
-      expect(SSLTest).to receive(:follow_crl_redirects).and_raise(ArgumentError.new("test"))
+      expect(SSLTest).to receive(:follow_ocsp_redirects).and_raise(ArgumentError.new("test"))
       valid, error, cert = SSLTest.test("https://digicert.com")
       expect(error).to eq ("SSL certificate test failed: test")
       expect(valid).to be_nil
@@ -120,9 +120,9 @@ describe SSLTest do
     end
 
     it "returns error on revoked cert (OCSP)" do
-      # CRL is tried first; disable it so OCSP performs the revocation check
-      expect(SSLTest).to receive(:test_crl_revocation).once.and_return([false, "skip CRL", nil])
+      # OCSP is tried first and detects the revocation, so CRL is never used
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
+      expect(SSLTest).not_to receive(:follow_crl_redirects)
       valid, error, cert = SSLTest.test("https://revoked-rsa-dv.ssl.com/")
       expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unspecified reason (revocation date: 2026-06-09 14:37:38 UTC)")
       expect(valid).to eq(false)
@@ -130,9 +130,9 @@ describe SSLTest do
     end
 
     it "returns error on revoked cert (CRL)" do
-      # CRL is tried first and detects the revocation, so OCSP is never used
+      # Disable OCSP (tried first) so the CRL performs the revocation check
+      expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
-      expect(SSLTest).not_to receive(:test_ocsp_revocation)
       # On a serial byte-match we fall back to #revoked to extract the reason/date
       expect_any_instance_of(OpenSSL::X509::CRL).to receive(:revoked).and_call_original
       valid, error, cert = SSLTest.test("https://revoked.testserver.host/")
@@ -143,27 +143,26 @@ describe SSLTest do
 
     it "stops following redirection after the limit for the revoked certs check" do
       valid, error, cert = SSLTest.test("https://github.com/", redirection_limit: 0)
-      expect(error).to include("Revocation test couldn't be performed: CRL: Missing crlDistributionPoints extension")
-      expect(error).to include("OCSP: Request failed")
+      expect(error).to include("Revocation test couldn't be performed: OCSP: Request failed")
       expect(error).to include("Too many redirections (> 0)")
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
     it "warns when the OCSP URI is missing" do
-      # Disable CRL (tried first) to see the OCSP error message
-      expect(SSLTest).to receive(:test_crl_revocation).twice.and_return([false, "skip CRL", nil])
+      # Disable CRL fallback to see the OCSP error message
+      expect(SSLTest).to receive(:test_crl_revocation).once.and_return([false, "skip CRL", nil])
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       valid, error, cert = SSLTest.test("https://google.com")
-      expect(error).to eq ("Revocation test couldn't be performed: CRL: skip CRL, OCSP: Missing OCSP URI in authorityInfoAccess extension")
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: Missing OCSP URI in authorityInfoAccess extension, CRL: skip CRL")
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
     it "works with CRL only" do
-      # CRL is tried first and succeeds for both certs, so OCSP is never used
+      # Disable OCSP so the CRL performs the revocation check for both certs
+      expect(SSLTest).to receive(:test_ocsp_revocation).twice.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).twice.and_call_original
-      expect(SSLTest).not_to receive(:test_ocsp_revocation)
       # Both certs are absent from their CRL, so the serial byte-search short-circuits
       # and we never materialise the (potentially huge) revoked list.
       expect_any_instance_of(OpenSSL::X509::CRL).not_to receive(:revoked)
@@ -178,15 +177,15 @@ describe SSLTest do
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).not_to receive(:follow_crl_redirects)
       valid, error, cert = SSLTest.test("https://github.com")
-      expect(error).to eq ("Revocation test couldn't be performed: CRL: Missing crlDistributionPoints extension, OCSP: skip OCSP")
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: skip OCSP, CRL: Missing crlDistributionPoints extension")
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "works with OCSP for first cert and CRL for intermediate (GitHub)" do
+    it "works with OCSP for first cert and CRL for intermediate (Google)" do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
-      valid, error, cert = SSLTest.test("https://github.com")
+      valid, error, cert = SSLTest.test("https://google.com")
       expect(error).to be_nil
       expect(valid).to eq(true)
       expect(cert).to be_a OpenSSL::X509::Certificate
@@ -343,7 +342,7 @@ describe SSLTest do
     it "reports revocation exceptions" do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/digicert_com_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/digicert_com_ca_bundle.pem')))
-      expect(SSLTest).to receive(:follow_crl_redirects).and_raise(ArgumentError.new("test"))
+      expect(SSLTest).to receive(:follow_ocsp_redirects).and_raise(ArgumentError.new("test"))
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to eq("SSL certificate test failed: test")
       expect(valid).to be_nil
@@ -354,9 +353,9 @@ describe SSLTest do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/revoked_rsa_dv_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/revoked_rsa_dv_ca_bundle.pem')))
 
-      # CRL is tried first; disable it so OCSP performs the revocation check
-      expect(SSLTest).to receive(:test_crl_revocation).once.and_return([false, "skip CRL", nil])
+      # OCSP is tried first and detects the revocation, so CRL is never used
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
+      expect(SSLTest).not_to receive(:follow_crl_redirects)
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to eq ("SSL certificate revoked: The certificate was revoked for an unknown reason (revocation date: 2025-06-09 15:07:39 UTC)")
@@ -368,9 +367,9 @@ describe SSLTest do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/revoked_badssl_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/revoked_badssl_ca_bundle.pem')))
 
-      # CRL is tried first and detects the revocation, so OCSP is never used
+      # Disable OCSP (tried first) so the CRL performs the revocation check
+      expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
-      expect(SSLTest).not_to receive(:test_ocsp_revocation)
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
       expect(valid).to eq(false)
@@ -382,8 +381,7 @@ describe SSLTest do
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_github_com_ca_bundle.pem')))
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle, redirection_limit: 0)
-      expect(error).to include("Revocation test couldn't be performed: CRL: Missing crlDistributionPoints extension")
-      expect(error).to include("OCSP: Request failed")
+      expect(error).to include("Revocation test couldn't be performed: OCSP: Request failed")
       expect(error).to include("Too many redirections (> 0)")
       expect(valid).to eq(true)
       expect(cert).to eq(cert)
@@ -393,12 +391,12 @@ describe SSLTest do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
 
-      # Disable CRL (tried first) to see the OCSP error message
-      expect(SSLTest).to receive(:test_crl_revocation).twice.and_return([false, "skip CRL", nil])
+      # Disable CRL fallback to see the OCSP error message
+      expect(SSLTest).to receive(:test_crl_revocation).once.and_return([false, "skip CRL", nil])
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
-      expect(error).to eq ("Revocation test couldn't be performed: CRL: skip CRL, OCSP: Missing OCSP URI in authorityInfoAccess extension")
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: Missing OCSP URI in authorityInfoAccess extension, CRL: skip CRL")
       expect(valid).to eq(true)
       expect(cert).to eq(cert)
     end
@@ -407,9 +405,9 @@ describe SSLTest do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_demarches-simplifiees_fr_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_demarches-simplifiees_fr_ca_bundle.pem')))
 
-      # CRL is tried first and succeeds for both certs, so OCSP is never used
+      # Disable OCSP so the CRL performs the revocation check for both certs
+      expect(SSLTest).to receive(:test_ocsp_revocation).twice.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).twice.and_call_original
-      expect(SSLTest).not_to receive(:test_ocsp_revocation)
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to be_nil
@@ -426,18 +424,18 @@ describe SSLTest do
       expect(SSLTest).not_to receive(:follow_crl_redirects)
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
-      expect(error).to eq ("Revocation test couldn't be performed: CRL: Missing crlDistributionPoints extension, OCSP: skip OCSP")
+      expect(error).to eq ("Revocation test couldn't be performed: OCSP: skip OCSP, CRL: Missing crlDistributionPoints extension")
       expect(valid).to eq(true)
       expect(cert).to eq(cert)
 
     end
 
-    it "works with OCSP for first cert and CRL for intermediate (GitHub)" do
+    it "works with OCSP for first cert and CRL for intermediate (Google)" do
       expect(SSLTest).to receive(:follow_ocsp_redirects).once.and_call_original
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
 
-      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_github_com_client.pem')))
-      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_github_com_ca_bundle.pem')))
+      cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/google_com_client.pem')))
+      ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/google_com_ca_bundle.pem')))
 
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to be_nil
@@ -476,8 +474,7 @@ describe SSLTest do
           expect(valid).to eq(true)
           expect(cert).to eq(cert)
 
-          # CRL is tried first, so both certs are checked via CRL (GET) through the proxy
-          expect($proxy).to have_received(:do_GET).twice
+          expect($proxy).to have_received(:do_GET).once
         end
       end
 
@@ -496,14 +493,14 @@ describe SSLTest do
   end
 
   describe '.revocation_order' do # no network: dispatch logic is stubbed
-    after { SSLTest.revocation_order = %i[crl ocsp] } # reset to the default
+    after { SSLTest.revocation_order = %i[ocsp crl] } # reset to the default
 
     let(:cert)   { OpenSSL::X509::Certificate.new }
     let(:issuer) { OpenSSL::X509::Certificate.new }
     let(:chain)  { [cert, issuer] }
 
-    it "defaults to CRL first" do
-      expect(SSLTest.revocation_order).to eq(%i[crl ocsp])
+    it "defaults to OCSP first" do
+      expect(SSLTest.revocation_order).to eq(%i[ocsp crl])
     end
 
     it "validates the value" do
@@ -511,23 +508,22 @@ describe SSLTest do
       expect { SSLTest.revocation_order = %i[ocsp bogus] }.to raise_error(ArgumentError)
     end
 
-    it "checks CRL first by default, falling back to OCSP on error" do
-      expect(SSLTest).to receive(:test_crl_revocation).ordered.and_return([false, "CRL boom", nil])
-      expect(SSLTest).to receive(:test_ocsp_revocation).ordered.and_return(:ocsp_ok)
-      result = SSLTest.send(:test_chain_revocation, chain)
-      expect(result).to eq([false, nil, nil])
-    end
-
-    it "checks OCSP first when configured, falling back to CRL on error" do
-      SSLTest.revocation_order = %i[ocsp crl]
+    it "checks OCSP first by default, falling back to CRL on error" do
       expect(SSLTest).to receive(:test_ocsp_revocation).ordered.and_return([false, "OCSP boom", nil])
       expect(SSLTest).to receive(:test_crl_revocation).ordered.and_return(:crl_ok)
       result = SSLTest.send(:test_chain_revocation, chain)
       expect(result).to eq([false, nil, nil])
     end
 
+    it "checks CRL first when configured, falling back to OCSP on error" do
+      SSLTest.revocation_order = %i[crl ocsp]
+      expect(SSLTest).to receive(:test_crl_revocation).ordered.and_return([false, "CRL boom", nil])
+      expect(SSLTest).to receive(:test_ocsp_revocation).ordered.and_return(:ocsp_ok)
+      result = SSLTest.send(:test_chain_revocation, chain)
+      expect(result).to eq([false, nil, nil])
+    end
+
     it "does not try the second method when the first one passes" do
-      SSLTest.revocation_order = %i[ocsp crl]
       expect(SSLTest).to receive(:test_ocsp_revocation).and_return(:ocsp_ok)
       expect(SSLTest).not_to receive(:test_crl_revocation)
       expect(SSLTest.send(:test_chain_revocation, chain)).to eq([false, nil, nil])

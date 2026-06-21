@@ -70,7 +70,9 @@ describe "SSLTest.cache.size", retry: 5 do # examples hit live CRL/OCSP endpoint
   end
 
   it "returns OCSP cache size properly" do
-    SSLTest.test("https://github.com")
+    # Google's leaf is checked via OCSP and its intermediate (no OCSP URI) via CRL,
+    # so this populates both the OCSP and CRL caches under the default OCSP-first order.
+    SSLTest.test("https://google.com")
     expect(SSLTest.cache.size[:ocsp][:responses]).to eq(1)
     expect(SSLTest.cache.size[:ocsp][:errors]).to eq(0)
     expect(SSLTest.cache.size[:ocsp][:bytes]).to be > 0

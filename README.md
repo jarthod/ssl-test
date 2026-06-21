@@ -59,7 +59,7 @@ error # => nil
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
-Revoked certificates are detected using [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) by default:
+Revoked certificates are detected using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) by default:
 
 ```ruby
 valid, error, cert = SSLTest.test_url "https://revoked.badssl.com"
@@ -68,13 +68,13 @@ error # => "SSL certificate revoked: Key Compromise (revocation date: 2019-10-07
 cert # => #<OpenSSL::X509::Certificate...>
 ```
 
-If the CRL is missing, invalid or unreachable the certificate revocation will be tested using [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol).
+If the OCSP endpoint is missing, invalid or unreachable the certificate revocation will be tested using the [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list).
 
-You can swap the order if you'd rather check OCSP first and only fall back to CRL on error (the default is CRL first, since 1.6, to reduce the revocation propagation delay):
+You can swap the order if you'd rather check CRL first and only fall back to OCSP on error (the default is OCSP first, since 2.1, because CRLs can be large and checking them is significantly more memory- and CPU-intensive):
 
 ```ruby
-SSLTest.revocation_order = %i[ocsp crl]   # OCSP first, CRL fallback
-SSLTest.revocation_order = %i[crl ocsp]   # the default: CRL first, OCSP fallback
+SSLTest.revocation_order = %i[crl ocsp]   # CRL first, OCSP fallback
+SSLTest.revocation_order = %i[ocsp crl]   # the default: OCSP first, CRL fallback
 ```
 
 If both CRL and OCSP tests are impossible, the certificate will still be considered valid but with an error message:
@@ -103,7 +103,7 @@ This check will pass for self-signed certificates if the certificate is signed b
 
 SSLTester connects as an HTTPS client (without issuing any requests) and then closes the connection. It does so using ruby `net/https` library and verifies the SSL status. It also hooks into the validation process to intercept the raw certificate for you.
 
-After that it fetches the [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) to verify if the certificate has been revoked. If the CRL is not available it'll query the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint instead. It does this for every certificates in the chain (except the root which is trusted by your Operating System). It is possible the first one will be validated with CRL and the intermediate with OCSP depending on what they offer.
+After that it queries the [OCSP](https://en.wikipedia.org/wiki/Online_Certificate_Status_Protocol) endpoint to verify if the certificate has been revoked. If the OCSP endpoint is not available it'll fetch the [CRL](https://en.wikipedia.org/wiki/Certificate_revocation_list) instead. It does this for every certificates in the chain (except the root which is trusted by your Operating System). It is possible the first one will be validated with OCSP and the intermediate with CRL depending on what they offer.
 
 ### Caching
 
@@ -200,8 +200,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 ## Changelog
 
-See also github releases: https://github.com/jarthod/ssl-test/releases
-
+* 2.1.0 - 2026-06-20: Check revocation with OCSP first and fall back to CRL (was CRL first since 1.6) because CRLs can be large and checking them is significantly more memory- and CPU-intensive. Set `SSLTest.revocation_order = %i[crl ocsp]` to restore the previous order.
 * 2.0.1 - 2026-06-19: Speed up and shrink the memory use of CRL checks with a fast path that scans the raw CRL for the certificate's serial before parsing, avoiding instantiating the entire revocation list (>1M Ruby objects for busy CAs) when the cert isn't revoked. Send both `If-None-Match` and `If-Modified-Since` on CRL revalidation so CDN-backed CAs that don't honor their own ETag (e.g. DigiCert) still return a `304` instead of re-downloading the whole list.
 * 2.0.0 - 2026-06-16: Make the revocation check order configurable via `SSLTest.revocation_order` (`%i[crl ocsp]` by default, set `%i[ocsp crl]` to check OCSP first). Make the cache backend configurable. The default stays an in-process `SSLTest::MemoryStore`, but you can now assign any object responding to the `Rails.cache`-style API (`read`/`write`/`delete`) with `SSLTest.cache = Rails.cache` to share responses across processes and get compression (e.g. memcache via Dalli — see the memcached note in the Caching section about raising the max value size for large CRLs). **Breaking:** the module-level `SSLTest.cache_size` and `SSLTest.flush_cache` were removed — use `SSLTest.cache.size` and `SSLTest.cache.clear` instead (these only work with the built-in `MemoryStore`; shared backends like `Rails.cache` can't be enumerated and shouldn't be wholesale-cleared)
 * 1.6.0 - 2026-06-16: Check revocation with CRL first and fall back to OCSP (was OCSP first) to reduce revocation detection delay
