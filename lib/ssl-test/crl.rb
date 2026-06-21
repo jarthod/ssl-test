@@ -12,35 +12,22 @@ module SSLTest
     # A note about caching:
     # I choose to only cache the raw HTTP body here (and not the parsed list or better a hash
     # indexed by certificat serial). This is not CPU efficient because it means every time we
-    # need to check a cert from a cached CRL we need to parse it again, instantiate the list
+    # need to check a cert from a cached CRL we need to read it again, optionally instantiate the list
     # of Revoked certs and then iterate to find it (there's no API to find one cert without
-    # generting the list unfortuantely).
+    # generting the list yet: https://github.com/ruby/openssl/pull/1065).
     # I did this because of memory efficiency, because for big 20MB CRL list (so taking 20MB
     # in memory cache), the parsed version takes more than 100M, the list of Revoked certs 120MB,
     # and building a hash with serial, time and reason takes even more.
     # So doing this would be MUCH faster in terms of CPU for subsequent tests on the same CRL
     # but would take a LOT of memory.
-    # Note: we now check CRL first for every cert in the chain (leaf included), so leaf
-    # CRLs are fetched and cached too. These can be large for busy CAs, which makes the
-    # memory tradeoff above (caching the raw body rather than the parsed list) even more relevant.
 
     private
 
     def test_crl_revocation cert, issuer:, chain:, **options
-      crl_distribution_points = cert.extensions.find do |extension|
-        extension.oid == "crlDistributionPoints"
-      end
+      crl = cert.crl_uris&.first
+      return [false, "Missing crlDistributionPoints extension", nil] if crl.nil?
 
-      return [false, "Missing crlDistributionPoints extension", nil] unless crl_distribution_points
-
-      # OpenSSL 2.2+ may simplify this: https://github.com/ruby/openssl/commit/ea702a106d3d8136c48f244593de95666be0edf9
-      crl = crl_distribution_points.value.split("\n").find do |description|
-        description.match?(/URI:/)
-      end
-
-      return [false, "Missing CRL URI in crlDistributionPoints extension", nil] unless crl
-
-      crl_uri = URI(crl[/URI:(.*)/, 1])
+      crl_uri = URI(crl)
       http_response, crl_request_error = follow_crl_redirects(crl_uri, **options)
       return [false, "Request failed (URI: #{crl_uri}): #{crl_request_error}", nil] unless http_response
 
