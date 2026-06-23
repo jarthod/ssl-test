@@ -40,10 +40,18 @@ module SSLTest
       serial_der = OpenSSL::ASN1::Integer.new(cert.serial).to_der
       return :crl_ok unless response.to_der.include?(serial_der)
 
-      # The serial's bytes appear (a real hit, or a rare collision):
-      # confirm authoritatively and pull the reason/date. The costly revoked-list
-      # materialisation only happens here, i.e. for actually-revoked certs.
-      revoked = response.revoked.find { |r| r.serial == cert.serial }
+      # The serial's bytes appear (a real hit, or a rare collision): confirm
+      # authoritatively and pull the reason/date. This only runs for the few
+      # certs that look revoked, so we can afford the lookup here.
+      revoked =
+        if response.respond_to?(:by_serial)
+          # O(log n) C-level lookup, no full-list materialisation. Only on recent
+          # openssl gems (https://github.com/ruby/openssl/pull/1065).
+          response.by_serial(cert.serial)
+        else
+          response.revoked.find { |r| r.serial == cert.serial }
+        end
+
       if revoked
         reason = revoked.extensions.find {|e| e.oid == "CRLReason"}&.value
         return [true, reason || "Unknown reason", revoked.time]

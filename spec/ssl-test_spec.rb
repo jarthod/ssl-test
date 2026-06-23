@@ -12,7 +12,7 @@ RSpec.configure do |config|
   # The error/revocation examples below hit several public TLS test endpoints
   # (badssl.com, testserver.host, ssl.com) which intermittently reset connections
   # under load. They're spread across a few providers to avoid hammering a single
-  # one, and the network-hitting describe blocks are tagged `retry: 5` (via
+  # one, and the network-hitting describe blocks are tagged `retry: 2` (via
   # rspec-retry) so transient network blips don't fail the suite.
   config.verbose_retry = true
   config.display_try_failure_messages = true
@@ -27,7 +27,7 @@ describe SSLTest do
 
   after(:each) { proxy_thread&.kill }
 
-  describe '.test_url', retry: 5 do # examples hit live TLS/CRL/OCSP endpoints
+  describe '.test_url', retry: 2 do # examples hit live TLS/CRL/OCSP endpoints
     it "returns no error on valid SNI website" do
       valid, error, cert = SSLTest.test("https://www.mycs.com")
       expect(error).to be_nil
@@ -67,7 +67,7 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on incomplete chain" do
+    it "returns error on incomplete chain", retry: 5 do
       valid, error, cert = SSLTest.test("https://incomplete-chain.badssl.com/")
       expect(error).to eq ("error code 20: unable to get local issuer certificate")
       expect(valid).to eq(false)
@@ -133,8 +133,10 @@ describe SSLTest do
       # Disable OCSP (tried first) so the CRL performs the revocation check
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
-      # On a serial byte-match we fall back to #revoked to extract the reason/date
-      expect_any_instance_of(OpenSSL::X509::CRL).to receive(:revoked).and_call_original
+      # On a serial byte-match we confirm via #by_serial (recent openssl) or, as a
+      # fallback, #revoked, to extract the reason/date.
+      confirm = OpenSSL::X509::CRL.method_defined?(:by_serial) ? :by_serial : :revoked
+      expect_any_instance_of(OpenSSL::X509::CRL).to receive(confirm).and_call_original
       valid, error, cert = SSLTest.test("https://revoked.testserver.host/")
       expect(error).to match(/SSL certificate revoked: Unknown reason \(revocation date:/)
       expect(valid).to eq(false)
@@ -164,8 +166,9 @@ describe SSLTest do
       expect(SSLTest).to receive(:test_ocsp_revocation).twice.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).twice.and_call_original
       # Both certs are absent from their CRL, so the serial byte-search short-circuits
-      # and we never materialise the (potentially huge) revoked list.
+      # and we never reach a per-serial lookup (let alone materialise the revoked list).
       expect_any_instance_of(OpenSSL::X509::CRL).not_to receive(:revoked)
+      expect_any_instance_of(OpenSSL::X509::CRL).not_to receive(:by_serial) if OpenSSL::X509::CRL.method_defined?(:by_serial)
       valid, error, cert = SSLTest.test("https://www.demarches-simplifiees.fr")
       expect(error).to be_nil
       expect(valid).to eq(true)
@@ -226,7 +229,7 @@ describe SSLTest do
           expect(valid).to eq(true)
           expect(cert).to be_a OpenSSL::X509::Certificate
 
-          expect($proxy).to have_received(:do_GET).twice
+          expect($proxy).to have_received(:do_GET).thrice
         end
       end
 
@@ -241,7 +244,7 @@ describe SSLTest do
     end
   end
 
-  describe '.follow_crl_redirects', retry: 5 do # fetches a live CRL
+  describe '.follow_crl_redirects', retry: 2 do # fetches a live CRL
     before { SSLTest.cache.clear }
     # 19MB: http://crl3.digicert.com/ssca-sha2-g6.crl
     it "fetch CRL list and updates cache" do
@@ -272,7 +275,7 @@ describe SSLTest do
     end
   end
 
-  describe '.cache', retry: 5 do # some examples hit live CRL/OCSP endpoints
+  describe '.cache', retry: 2 do # some examples hit live CRL/OCSP endpoints
     # Restore the default in-process store after tests that swap the backend so
     # global state doesn't leak between examples.
     after { SSLTest.cache = SSLTest::MemoryStore.new }
@@ -299,7 +302,7 @@ describe SSLTest do
     end
   end
 
-  describe '.test_cert', retry: 5 do # revocation checks hit live CRL/OCSP endpoints
+  describe '.test_cert', retry: 2 do # revocation checks hit live CRL/OCSP endpoints
     it "returns no error on valid SNI website" do
       cert = OpenSSL::X509::Certificate.new(File.read(File.join(__dir__, 'fixtures/www_mycs_com_client.pem')))
       ca_bundle = OpenSSL::X509::Certificate.load(File.read(File.join(__dir__, 'fixtures/www_mycs_com_ca_bundle.pem')))
@@ -370,6 +373,9 @@ describe SSLTest do
       # Disable OCSP (tried first) so the CRL performs the revocation check
       expect(SSLTest).to receive(:test_ocsp_revocation).once.and_return([false, "skip OCSP", nil])
       expect(SSLTest).to receive(:follow_crl_redirects).once.and_call_original
+      # On a serial byte-match we confirm via #by_serial (recent openssl) or #revoked
+      confirm = OpenSSL::X509::CRL.method_defined?(:by_serial) ? :by_serial : :revoked
+      expect_any_instance_of(OpenSSL::X509::CRL).to receive(confirm).and_call_original
       valid, error, cert = SSLTest.test_cert(cert, ca_bundle)
       expect(error).to eq ("SSL certificate revoked: Key Compromise (revocation date: 2026-05-12 21:01:31 UTC)")
       expect(valid).to eq(false)

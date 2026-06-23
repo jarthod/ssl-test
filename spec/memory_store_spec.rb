@@ -52,7 +52,7 @@ describe SSLTest::MemoryStore do
 end
 
 # #size as reported through the default store after real CRL/OCSP fetches.
-describe "SSLTest.cache.size", retry: 5 do # examples hit live CRL/OCSP endpoints
+describe "SSLTest.cache.size", retry: 2 do # examples hit live CRL/OCSP endpoints
   before { SSLTest.cache.clear }
 
   it "returns 0 by default" do

@@ -200,6 +200,7 @@ But also **revoked certs** like most browsers (not handled by `curl`)
 
 ## Changelog
 
+* 2.1.2 - 2026-06-23: Add support for faster `CRL#by_serial` method I just added to OpenSSL (https://github.com/ruby/openssl/pull/1065)
 * 2.1.1 - 2026-06-21: Refactor CRL code to use newer OpenSSL `crl_uris` helper
 * 2.1.0 - 2026-06-20: Check revocation with OCSP first and fall back to CRL (was CRL first since 1.6) because CRLs can be large and checking them is significantly more memory- and CPU-intensive. Set `SSLTest.revocation_order = %i[crl ocsp]` to restore the previous order.
 * 2.0.1 - 2026-06-19: Speed up and shrink the memory use of CRL checks with a fast path that scans the raw CRL for the certificate's serial before parsing, avoiding instantiating the entire revocation list (>1M Ruby objects for busy CAs) when the cert isn't revoked. Send both `If-None-Match` and `If-Modified-Since` on CRL revalidation so CDN-backed CAs that don't honor their own ETag (e.g. DigiCert) still return a `304` instead of re-downloading the whole list.
