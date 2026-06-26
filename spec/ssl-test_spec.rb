@@ -43,16 +43,6 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    # Disabled: unlikely to be repaired anytime soon: https://github.com/chromium/badssl.com/issues/447
-    # Couldn't find a good alternative
-    # it "returns no error when no CN" do
-    #   pending "Expired for the moment https://github.com/chromium/badssl.com/issues/447"
-    #   valid, error, cert = SSLTest.test("https://no-common-name.badssl.com/")
-    #   expect(error).to be_nil
-    #   expect(valid).to eq(true)
-    #   expect(cert).to be_a OpenSSL::X509::Certificate
-    # end
-
     it "works with websites blocking http requests" do
       valid, error, cert = SSLTest.test("https://obyava.ua")
       expect(error).to be_nil
@@ -67,15 +57,15 @@ describe SSLTest do
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
-    it "returns error on incomplete chain", retry: 5 do
-      valid, error, cert = SSLTest.test("https://incomplete-chain.badssl.com/")
+    it "returns error on incomplete chain" do
+      valid, error, cert = SSLTest.test("https://incomplete-chain.testserver.host/")
       expect(error).to eq ("error code 20: unable to get local issuer certificate")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
     end
 
     it "returns error on untrusted root" do
-      valid, error, cert = SSLTest.test("https://untrusted-root.testserver.host/")
+      valid, error, cert = SSLTest.test("https://no-common-name--untrusted-root.testserver.host/")
       expect(error).to eq ("error code 19: self-signed certificate in certificate chain")
       expect(valid).to eq(false)
       expect(cert).to be_a OpenSSL::X509::Certificate
